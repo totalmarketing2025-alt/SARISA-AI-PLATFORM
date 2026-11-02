@@ -1,0 +1,22 @@
+name: Windows build
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter create --platforms=android,windows .
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - run: flutter build windows --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sarisa-windows
+          path: build/windows/x64/runner/Release/
