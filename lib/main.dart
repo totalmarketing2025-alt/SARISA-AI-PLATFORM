@@ -89,13 +89,16 @@ class _SarisaShellState extends State<SarisaShell> {
       const SizedBox(height: 34),
       ...List.generate(labels.length, (i) => Padding(
         padding: const EdgeInsets.only(bottom: 7),
-        child: ListTile(
+        child: Material(
+          color: Colors.transparent,
+          child: ListTile(
           selected: selected == i,
           selectedTileColor: const Color(0xFF123B55),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           leading: Icon(icons[i], color: selected == i ? green : muted),
           title: Text(labels[i], style: const TextStyle(fontSize: 13)),
           onTap: () => setState(() => selected = i),
+          ),
         ),
       )),
       const Spacer(),
