@@ -21,44 +21,52 @@ jobs:
 
       - run: flutter create --platforms=android,windows .
 
-      - name: Set Android compileSdk 36
+      - run: flutter pub get
+
+      - name: Set all Android modules to compileSdk 36
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import re
 
-          files = [
-              Path("android/app/build.gradle.kts"),
-              Path("android/app/build.gradle"),
+          roots = [
+              Path("android"),
+              Path.home() / ".pub-cache/hosted/pub.dev",
           ]
 
-          updated = False
+          pattern = re.compile(
+              r'(?m)^(\s*compileSdk(?:Version)?\s*(?:=\s*)?)'
+              r'(?:flutter\.compileSdkVersion|\d+)'
+              r'(\s*(?://.*)?)$'
+          )
 
-          for path in files:
-              if not path.exists():
+          changed = 0
+
+          for root in roots:
+              if not root.exists():
                   continue
 
-              content = path.read_text()
+              for path in root.rglob("build.gradle*"):
+                  if path.name not in ("build.gradle", "build.gradle.kts"):
+                      continue
 
-              patterns = [
-                  (r'(?m)^(\s*)compileSdk\s*=.*$', r'\g<1>compileSdk = 36'),
-                  (r'(?m)^(\s*)compileSdkVersion\s*=.*$', r'\g<1>compileSdkVersion = 36'),
-                  (r'(?m)^(\s*)compileSdkVersion\s+.*$', r'\g<1>compileSdkVersion 36'),
-              ]
+                  content = path.read_text()
+                  updated, count = pattern.subn(
+                      lambda m: m.group(1) + "36" + m.group(2),
+                      content
+                  )
 
-              for pattern, replacement in patterns:
-                  content, count = re.subn(pattern, replacement, content, count=1)
                   if count:
-                      path.write_text(content)
-                      print(f"Updated {path} to compileSdk 36")
-                      updated = True
-                      break
+                      path.write_text(updated)
+                      print(f"Updated: {path}")
+                      changed += count
 
-          if not updated:
-              raise SystemExit("ERROR: Could not find compileSdk setting")
+          if changed == 0:
+              raise SystemExit("ERROR: No compileSdk settings were updated")
+
+          print(f"Total updated settings: {changed}")
           PY
 
-      - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
       - run: flutter build apk --release
