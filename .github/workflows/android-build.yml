@@ -3,23 +3,66 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+
       - run: flutter create --platforms=android,windows .
+
+      - name: Set Android compileSdk 36
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          files = [
+              Path("android/app/build.gradle.kts"),
+              Path("android/app/build.gradle"),
+          ]
+
+          updated = False
+
+          for path in files:
+              if not path.exists():
+                  continue
+
+              content = path.read_text()
+
+              patterns = [
+                  (r'(?m)^(\s*)compileSdk\s*=.*$', r'\g<1>compileSdk = 36'),
+                  (r'(?m)^(\s*)compileSdkVersion\s*=.*$', r'\g<1>compileSdkVersion = 36'),
+                  (r'(?m)^(\s*)compileSdkVersion\s+.*$', r'\g<1>compileSdkVersion 36'),
+              ]
+
+              for pattern, replacement in patterns:
+                  content, count = re.subn(pattern, replacement, content, count=1)
+                  if count:
+                      path.write_text(content)
+                      print(f"Updated {path} to compileSdk 36")
+                      updated = True
+                      break
+
+          if not updated:
+              raise SystemExit("ERROR: Could not find compileSdk setting")
+          PY
+
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
       - run: flutter build apk --release
+
       - uses: actions/upload-artifact@v4
         with:
           name: sarisa-android-apk
