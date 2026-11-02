@@ -383,7 +383,7 @@ class SettingsPage extends StatelessWidget {
   Widget build(BuildContext context) => const PageFrame(
     title: 'System settings',
     subtitle: 'Integration configuration placeholders',
-    children: const [
+    children: [
       EventRow('Drone adapter', 'Not connected • adapter interface to be implemented', blue),
       EventRow('Map provider', 'API key and provider configuration required', muted),
       EventRow('Communication gateway', 'GSM / Wi-Fi / Bluetooth / radio adapters not configured', muted),
