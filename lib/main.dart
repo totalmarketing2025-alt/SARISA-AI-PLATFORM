@@ -141,7 +141,7 @@ class PageFrame extends StatelessWidget {
 Widget metric(String name, String value, IconData icon, {Color color = blue}) => Card(
   child: Padding(padding: const EdgeInsets.all(16), child: Row(children: [
     Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(
-      color: color.withOpacity(.12), borderRadius: BorderRadius.circular(10)),
+      color: color.withValues(alpha: .12), borderRadius: BorderRadius.circular(10)),
       child: Icon(icon, color: color)),
     const SizedBox(width: 12),
     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -271,8 +271,8 @@ class _SearchPageState extends State<SearchPage> {
         ],
       ))),
       const SizedBox(height: 14),
-      Card(child: Padding(padding: const EdgeInsets.all(18), child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start, children: const [
+      const Card(child: Padding(padding: EdgeInsets.all(18), child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('VISUAL OBSERVATION', style: TextStyle(fontWeight: FontWeight.bold)),
           SizedBox(height: 8),
           Text('Future approved computer-vision integration can classify broad scene objects (for example, person, vehicle, smoke, or debris) without identifying individuals.',
@@ -363,10 +363,10 @@ class FlightPage extends StatelessWidget {
             style: TextStyle(color: muted, fontSize: 12)),
           const SizedBox(height: 14),
           Wrap(spacing: 10, runSpacing: 10, children: [
-            OutlinedButton.icon(onPressed: null, icon: Icon(Icons.flight_takeoff), label: Text('TAKE OFF')),
-            OutlinedButton.icon(onPressed: null, icon: Icon(Icons.home), label: Text('RETURN HOME')),
-            OutlinedButton.icon(onPressed: null, icon: Icon(Icons.pause_circle), label: Text('HOLD')),
-            OutlinedButton.icon(onPressed: null, icon: Icon(Icons.emergency), label: Text('EMERGENCY')),
+            OutlinedButton.icon(onPressed: null, icon: const Icon(Icons.flight_takeoff), label: const Text('TAKE OFF')),
+            OutlinedButton.icon(onPressed: null, icon: const Icon(Icons.home), label: const Text('RETURN HOME')),
+            OutlinedButton.icon(onPressed: null, icon: const Icon(Icons.pause_circle), label: const Text('HOLD')),
+            OutlinedButton.icon(onPressed: null, icon: const Icon(Icons.emergency), label: const Text('EMERGENCY')),
           ]),
           const SizedBox(height: 8),
           const Text('Controls disabled until a separately reviewed, certified safety integration is designed.',
@@ -380,7 +380,7 @@ class FlightPage extends StatelessWidget {
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
   @override
-  Widget build(BuildContext context) => PageFrame(
+  Widget build(BuildContext context) => const PageFrame(
     title: 'System settings',
     subtitle: 'Integration configuration placeholders',
     children: const [
