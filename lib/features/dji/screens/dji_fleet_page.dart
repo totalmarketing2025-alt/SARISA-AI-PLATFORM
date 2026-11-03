@@ -5,7 +5,7 @@ class _DroneSlot {
   String modelId;
   String mode;
 
-  _DroneSlot({required this.modelId, this.mode = 'RC'});
+  _DroneSlot({required this.modelId}) : mode = 'RC';
 }
 
 class DjiFleetPage extends StatefulWidget {
@@ -168,7 +168,7 @@ class _DjiFleetPageState extends State<DjiFleetPage> {
             const Text('AIRCRAFT MODEL', style: TextStyle(fontSize: 9, color: Color(0xFF8FA7B8))),
             const SizedBox(height: 5),
             DropdownButtonFormField<String>(
-              value: slot.modelId,
+              initialValue: slot.modelId,
               isExpanded: true,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
@@ -186,7 +186,7 @@ class _DjiFleetPageState extends State<DjiFleetPage> {
             const Text('INTEGRATION MODE', style: TextStyle(fontSize: 9, color: Color(0xFF8FA7B8))),
             const SizedBox(height: 5),
             DropdownButtonFormField<String>(
-              value: slot.mode,
+              initialValue: slot.mode,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
