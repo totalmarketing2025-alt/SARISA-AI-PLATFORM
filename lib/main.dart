@@ -3,6 +3,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'features/dji/screens/dji_fleet_page.dart';
+import 'features/tactical/screens/tactical_ops_page.dart';
 
 void main() => runApp(const SarisaApp());
 
@@ -47,16 +48,17 @@ class SarisaShell extends StatefulWidget {
 class _SarisaShellState extends State<SarisaShell> {
   int selected = 0;
   final pages = const [
-    DashboardPage(), MissionPage(), SearchPage(), VideoPage(),
-    FlightPage(), DjiFleetPage(), SettingsPage()
+    DashboardPage(), TacticalOpsPage(), MissionPage(), SearchPage(),
+    VideoPage(), FlightPage(), DjiFleetPage(), SettingsPage()
   ];
   final labels = const [
-    'Overview', 'Missions', 'Search cases', 'Video link',
-    'Flight data', 'DJI Fleet', 'Settings'
+    'Overview', 'Tactical Ops', 'Missions', 'Search cases',
+    'Video link', 'Flight data', 'DJI Fleet', 'Settings'
   ];
   final icons = const [
-    Icons.dashboard_outlined, Icons.route, Icons.manage_search,
-    Icons.videocam_outlined, Icons.sensors, Icons.flight, Icons.settings_outlined
+    Icons.dashboard_outlined, Icons.radar, Icons.route,
+    Icons.manage_search, Icons.videocam_outlined, Icons.sensors,
+    Icons.flight, Icons.settings_outlined
   ];
 
   @override
