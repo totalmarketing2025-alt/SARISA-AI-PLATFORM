@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'features/dji/screens/dji_fleet_page.dart';
 
 void main() => runApp(const SarisaApp());
 
@@ -46,12 +47,16 @@ class SarisaShell extends StatefulWidget {
 class _SarisaShellState extends State<SarisaShell> {
   int selected = 0;
   final pages = const [
-    DashboardPage(), MissionPage(), SearchPage(), VideoPage(), FlightPage(), SettingsPage()
+    DashboardPage(), MissionPage(), SearchPage(), VideoPage(),
+    FlightPage(), DjiFleetPage(), SettingsPage()
   ];
-  final labels = const ['Overview', 'Missions', 'Search cases', 'Video link', 'Flight data', 'Settings'];
+  final labels = const [
+    'Overview', 'Missions', 'Search cases', 'Video link',
+    'Flight data', 'DJI Fleet', 'Settings'
+  ];
   final icons = const [
     Icons.dashboard_outlined, Icons.route, Icons.manage_search,
-    Icons.videocam_outlined, Icons.sensors, Icons.settings_outlined
+    Icons.videocam_outlined, Icons.sensors, Icons.flight, Icons.settings_outlined
   ];
 
   @override
@@ -65,12 +70,30 @@ class _SarisaShellState extends State<SarisaShell> {
           Expanded(child: IndexedStack(index: selected, children: pages)),
         ])),
       ]),
-      bottomNavigationBar: wide ? null : NavigationBar(
-        selectedIndex: selected,
-        onDestinationSelected: (v) => setState(() => selected = v),
-        destinations: List.generate(5, (i) => NavigationDestination(
-          icon: Icon(icons[i]), label: labels[i],
-        )),
+      bottomNavigationBar: wide ? null : SizedBox(
+        height: 68,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          itemCount: labels.length,
+          itemBuilder: (context, i) => InkWell(
+            onTap: () => setState(() => selected = i),
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 82),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              color: selected == i ? const Color(0xFF123B55) : Colors.transparent,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icons[i], size: 20, color: selected == i ? green : muted),
+                  const SizedBox(height: 4),
+                  Text(labels[i], style: TextStyle(
+                    fontSize: 9, color: selected == i ? green : muted,
+                  )),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
