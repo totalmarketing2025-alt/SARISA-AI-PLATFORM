@@ -192,12 +192,12 @@ class DashboardPage extends StatelessWidget {
         SizedBox(width: 205, child: metric('BATTERY', '—', Icons.battery_5_bar, color: muted)),
       ]),
       const SizedBox(height: 16),
-      const Card(child: Padding(padding: const EdgeInsets.all(18), child: Column(
+      const Card(child: Padding(padding: EdgeInsets.all(18), child: Column(
         crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Row(children: [Icon(Icons.map_outlined, color: blue), SizedBox(width: 9),
+          Row(children: [Icon(Icons.map_outlined, color: blue), SizedBox(width: 9),
             Text('AREA OVERVIEW', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1))]),
-          const SizedBox(height: 14),
-          const SarisaMap(height: 260),
+          SizedBox(height: 14),
+          SarisaMap(height: 260),
         ],
       ))),
       const SizedBox(height: 16),
