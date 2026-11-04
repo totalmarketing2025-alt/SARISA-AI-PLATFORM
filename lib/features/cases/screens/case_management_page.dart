@@ -1,10 +1,9 @@
-import 'dart:io';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../models/search_case.dart';
 import '../services/case_storage_service.dart';
+import '../widgets/person_detection_photo_card.dart';
 
 class CaseManagementPage extends StatefulWidget {
   const CaseManagementPage({super.key});
@@ -603,41 +602,10 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
               itemCount: photos.length,
               itemBuilder: (context, index) {
                 final photo = photos[index];
-                final imageFile = File(photo.filePath);
 
-                return Card(
-                  clipBehavior: Clip.antiAlias,
-                  child: Column(
-                    children: [
-                      Expanded(
-                        child: imageFile.existsSync()
-                            ? Image.file(
-                                imageFile,
-                                width: double.infinity,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) =>
-                                    const Icon(Icons.broken_image),
-                              )
-                            : const Center(
-                                child: Icon(Icons.broken_image, size: 40),
-                              ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        child: Text(
-                          photo.fileName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 10),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Delete photo',
-                        onPressed: () => _deletePhoto(photo),
-                        icon: const Icon(Icons.delete_outline, size: 19),
-                      ),
-                    ],
-                  ),
+                return PersonDetectionPhotoCard(
+                  photo: photo,
+                  onDelete: () => _deletePhoto(photo),
                 );
               },
             );
