@@ -160,7 +160,7 @@ class _SarisaMapState extends State<SarisaMap> {
                       ),
                     ],
                   ),
-                RichAttributionWidget(
+                const RichAttributionWidget(
                   attributions: [
                     TextSourceAttribution('© OpenStreetMap contributors'),
                   ],

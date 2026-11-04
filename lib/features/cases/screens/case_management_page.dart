@@ -498,7 +498,7 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  value: _case.status,
+                  initialValue: _case.status,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
                   ),
