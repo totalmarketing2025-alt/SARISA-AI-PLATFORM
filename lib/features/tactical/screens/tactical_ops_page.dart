@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../features/dji/models/dji_drone_model.dart';
+import '../../map/widgets/sarisa_map.dart';
 
 const _bg = Color(0xFF10170F);
 const _panel = Color(0xFF1A2417);
@@ -132,8 +133,8 @@ class TacticalOpsPage extends StatelessWidget {
         children: [
           SizedBox(width: width, child: _metric('DRONES', '0 / 4', Icons.flight, _orange)),
           SizedBox(width: width, child: _metric('GROUND TEAMS', '0 CONNECTED', Icons.groups, _orange)),
-          SizedBox(width: width, child: _metric('GPS STATUS', 'UNAVAILABLE', Icons.gps_off, _orange)),
-          SizedBox(width: width, child: _metric('MAP FEED', 'OFFLINE', Icons.map_outlined, _orange)),
+          SizedBox(width: width, child: _metric('GPS STATUS', 'REQUEST ON MAP', Icons.gps_off, _orange)),
+          SizedBox(width: width, child: _metric('MAP FEED', 'OPENSTREETMAP', Icons.map_outlined, _green)),
         ],
       );
     },
@@ -191,76 +192,7 @@ class TacticalOpsPage extends StatelessWidget {
     ],
   );
 
-  Widget _mapPanel() => Container(
-    height: 290,
-    width: double.infinity,
-    decoration: BoxDecoration(
-      color: const Color(0xFF151F14),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: _border),
-    ),
-    child: Stack(
-      children: [
-        Positioned.fill(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: CustomPaint(painter: _TacticalGridPainter()),
-          ),
-        ),
-        Positioned(
-          top: 12,
-          left: 12,
-          child: _tag('MAP PROVIDER NOT CONNECTED', _orange),
-        ),
-        const Positioned(
-          top: 14,
-          right: 14,
-          child: Icon(Icons.layers_outlined, color: _muted, size: 19),
-        ),
-        const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.public, color: _olive, size: 48),
-              SizedBox(height: 10),
-              Text(
-                'TACTICAL MAP OFFLINE',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                  letterSpacing: 1,
-                ),
-              ),
-              SizedBox(height: 6),
-              Text(
-                'Connect an approved map provider',
-                style: TextStyle(color: _muted, fontSize: 10),
-              ),
-              SizedBox(height: 4),
-              Text(
-                'No GPS positions are currently available',
-                style: TextStyle(color: _orange, fontSize: 9),
-              ),
-            ],
-          ),
-        ),
-        Positioned(
-          bottom: 12,
-          left: 12,
-          child: _tag('LIVE DATA: UNAVAILABLE', _orange),
-        ),
-        const Positioned(
-          bottom: 14,
-          right: 14,
-          child: Text(
-            'SARISA MAP / 01',
-            style: TextStyle(color: _muted, fontSize: 8),
-          ),
-        ),
-      ],
-    ),
-  );
+  Widget _mapPanel() => const SarisaMap(height: 290);
 
   Widget _droneGrid() => Column(
     children: List.generate(4, (index) {
@@ -422,43 +354,4 @@ class _SystemRow extends StatelessWidget {
       ],
     ),
   );
-}
-
-class _TacticalGridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final gridPaint = Paint()
-      ..color = _olive.withValues(alpha: .13)
-      ..strokeWidth = .6;
-
-    const spacing = 27.0;
-    for (double x = 0; x < size.width; x += spacing) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
-    }
-    for (double y = 0; y < size.height; y += spacing) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
-    }
-
-    final centerPaint = Paint()
-      ..color = _olive.withValues(alpha: .22)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-
-    final center = Offset(size.width / 2, size.height / 2);
-    canvas.drawCircle(center, 65, centerPaint);
-    canvas.drawCircle(center, 95, centerPaint);
-    canvas.drawLine(
-      Offset(center.dx - 110, center.dy),
-      Offset(center.dx + 110, center.dy),
-      centerPaint,
-    );
-    canvas.drawLine(
-      Offset(center.dx, center.dy - 110),
-      Offset(center.dx, center.dy + 110),
-      centerPaint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

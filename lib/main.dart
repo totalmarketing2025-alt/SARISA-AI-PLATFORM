@@ -3,6 +3,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'features/dji/screens/dji_fleet_page.dart';
+import 'features/map/widgets/sarisa_map.dart';
 import 'features/tactical/screens/tactical_ops_page.dart';
 
 void main() => runApp(const SarisaApp());
@@ -188,10 +189,8 @@ class DashboardPage extends StatelessWidget {
     subtitle: 'Situational awareness • Search and rescue • Operator-supervised missions',
     children: [
       Wrap(spacing: 12, runSpacing: 12, children: [
-        SizedBox(width: 205, child: metric('AIR UNIT', 'STANDBY', Icons.air, color: green)),
-        SizedBox(width: 205, child: metric('BATTERY', '87%', Icons.battery_5_bar)),
-        SizedBox(width: 205, child: metric('GPS FIX', '3D / GOOD', Icons.gps_fixed, color: green)),
-        SizedBox(width: 205, child: metric('LINK STATUS', 'CONNECTED', Icons.wifi, color: green)),
+        SizedBox(width: 205, child: metric('AIR UNIT', 'NOT CONNECTED', Icons.air, color: muted)),
+        SizedBox(width: 205, child: metric('BATTERY', '—', Icons.battery_5_bar, color: muted)),
       ]),
       const SizedBox(height: 16),
       Card(child: Padding(padding: const EdgeInsets.all(18), child: Column(
@@ -199,17 +198,7 @@ class DashboardPage extends StatelessWidget {
           const Row(children: [Icon(Icons.map_outlined, color: blue), SizedBox(width: 9),
             Text('AREA OVERVIEW', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1))]),
           const SizedBox(height: 14),
-          Container(height: 260, width: double.infinity,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              gradient: const LinearGradient(colors: [Color(0xFF102D3C), Color(0xFF173B45)]),
-            ),
-            child: const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.public, size: 52, color: Color(0xFF4A8393)),
-              SizedBox(height: 10),
-              Text('MAP PROVIDER NOT CONFIGURED', style: TextStyle(color: muted, fontSize: 11)),
-              Text('Connect an approved map tile provider in Settings', style: TextStyle(color: muted, fontSize: 10)),
-            ]))),
+          const SarisaMap(height: 260),
         ],
       ))),
       const SizedBox(height: 16),
