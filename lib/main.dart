@@ -1,8 +1,7 @@
-import 'dart:io';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'features/dji/screens/dji_fleet_page.dart';
+import 'features/cases/screens/case_management_page.dart';
 import 'features/map/widgets/sarisa_map.dart';
 import 'features/tactical/screens/tactical_ops_page.dart';
 
@@ -49,7 +48,7 @@ class SarisaShell extends StatefulWidget {
 class _SarisaShellState extends State<SarisaShell> {
   int selected = 0;
   final pages = const [
-    DashboardPage(), TacticalOpsPage(), MissionPage(), SearchPage(),
+    DashboardPage(), TacticalOpsPage(), MissionPage(), CaseManagementPage(),
     VideoPage(), FlightPage(), DjiFleetPage(), SettingsPage()
   ];
   final labels = const [
@@ -244,58 +243,6 @@ class MissionPage extends StatelessWidget {
       ))),
       const SizedBox(height: 12),
       const EventRow('No missions yet', 'New missions will appear here', muted),
-    ],
-  );
-}
-
-class SearchPage extends StatefulWidget {
-  const SearchPage({super.key});
-  @override
-  State<SearchPage> createState() => _SearchPageState();
-}
-class _SearchPageState extends State<SearchPage> {
-  String? fileName;
-  String? filePath;
-  @override
-  Widget build(BuildContext context) => PageFrame(
-    title: 'Search cases',
-    subtitle: 'Upload reference material and record non-identifying visual observations',
-    children: [
-      Card(child: Padding(padding: const EdgeInsets.all(18), child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('REFERENCE IMAGE UPLOAD', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          const Text('Attach a photo to a case record for human review. This prototype does not perform face recognition, identity matching, or person tracking.',
-            style: TextStyle(color: muted, fontSize: 12)),
-          const SizedBox(height: 14),
-          OutlinedButton.icon(
-            onPressed: () async {
-              final result = await FilePicker.platform.pickFiles(type: FileType.image, withData: false);
-              if (result != null && result.files.single.path != null) {
-                setState(() { fileName = result.files.single.name; filePath = result.files.single.path; });
-              }
-            },
-            icon: const Icon(Icons.upload_file), label: const Text('UPLOAD IMAGE'),
-          ),
-          if (fileName != null) ...[
-            const SizedBox(height: 12),
-            Text(fileName!, style: const TextStyle(color: green)),
-            if (filePath != null) ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.file(File(filePath!), height: 180, fit: BoxFit.contain),
-            ),
-          ],
-        ],
-      ))),
-      const SizedBox(height: 14),
-      const Card(child: Padding(padding: EdgeInsets.all(18), child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('VISUAL OBSERVATION', style: TextStyle(fontWeight: FontWeight.bold)),
-          SizedBox(height: 8),
-          Text('Future approved computer-vision integration can classify broad scene objects (for example, person, vehicle, smoke, or debris) without identifying individuals.',
-            style: TextStyle(color: muted, fontSize: 12)),
-        ],
-      ))),
     ],
   );
 }
