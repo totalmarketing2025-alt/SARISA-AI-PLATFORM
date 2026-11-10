@@ -131,10 +131,12 @@ class _LiveAiPanelState extends State<LiveAiPanel> {
           confidence: d.confidence, timestamp: now)).toList());
       }
     } catch (e) {
-      if (mounted && _active) setState(() {
-        _error = 'Live inference unavailable: $e';
-        _boxes = [];
-      });
+      if (mounted && _active) {
+        setState(() {
+          _error = 'Live inference unavailable: $e';
+          _boxes = [];
+        });
+      }
     } finally {
       _processing = false;
     }
