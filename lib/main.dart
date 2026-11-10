@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'features/missions/screens/mission_planning_page.dart';
 import 'features/simulation/screens/simulation_ops_page.dart';
 import 'package:video_player/video_player.dart';
 import 'features/dji/screens/dji_fleet_page.dart';
@@ -49,7 +50,7 @@ class SarisaShell extends StatefulWidget {
 class _SarisaShellState extends State<SarisaShell> {
   int selected = 0;
   final pages = const [
-    DashboardPage(), TacticalOpsPage(), MissionPage(), CaseManagementPage(),
+    DashboardPage(), TacticalOpsPage(), MissionPlanningPage(), CaseManagementPage(),
     VideoPage(), FlightPage(), DjiFleetPage(), SimulationOpsPage(), SettingsPage()
   ];
   final labels = const [
