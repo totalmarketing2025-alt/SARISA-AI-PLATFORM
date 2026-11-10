@@ -19,6 +19,7 @@ class _MissionPlanningPageState extends State<MissionPlanningPage> {
   MissionPlan? selected;
   String mode = 'WAYPOINT';
   bool busy = false;
+  Future<void> _writeQueue = Future<void>.value();
   String? error;
 
   @override
@@ -74,12 +75,15 @@ class _MissionPlanningPageState extends State<MissionPlanningPage> {
     ]));
   }
 
-  Future<void> _persist() async {
-    if (busy) return;
-    setState(() { busy = true; error = null; });
-    try { await repository.save(missions); }
-    catch (e) { if (mounted) setState(() => error = 'Save failed: $e'); }
-    finally { if (mounted) setState(() => busy = false); }
+  Future<void> _persist() {
+    final snapshot = List<MissionPlan>.of(missions);
+    if (mounted) setState(() { busy = true; error = null; });
+    _writeQueue = _writeQueue.then((_) => repository.save(snapshot)).catchError((Object e) {
+      if (mounted) setState(() => error = 'Save failed: $e');
+    }).whenComplete(() {
+      if (mounted) setState(() => busy = false);
+    });
+    return _writeQueue;
   }
 
   @override
