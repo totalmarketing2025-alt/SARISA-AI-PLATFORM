@@ -14,6 +14,8 @@ jobs:
         with:
           channel: stable
           cache: true
+      - name: Generate missing windows platform project
+        run: flutter create --platforms=windows --project-name sarisa .
       - name: Enable Windows desktop
         run: flutter config --enable-windows-desktop
       - name: Flutter dependencies
