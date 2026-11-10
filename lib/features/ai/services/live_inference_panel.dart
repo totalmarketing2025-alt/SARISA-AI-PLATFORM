@@ -88,6 +88,8 @@ class _LiveAiPanelState extends State<LiveAiPanel> {
   bool _active = false;
   bool _processing = false;
   int _ticks = 0;
+  final Map<String, DateTime> _lastEventAt = {};
+  static const _eventCooldown = Duration(seconds: 30);
 
   Uri? _validated(String raw) {
     final uri = Uri.tryParse(raw.trim());
@@ -124,11 +126,24 @@ class _LiveAiPanelState extends State<LiveAiPanel> {
       setState(() { _frame = frame; _boxes = accepted; _error = null; });
       final now = DateTime.now().toUtc();
       _ticks++;
-      if (accepted.isNotEmpty) {
-        await widget.onDetections(accepted.map((d) => AiFinding(
-          id: '${now.microsecondsSinceEpoch}-$_ticks-${accepted.indexOf(d)}',
-          source: _camera.text.trim(), category: d.category,
-          confidence: d.confidence, timestamp: now)).toList());
+      // Rate-limit event creation per source and category to avoid flooding
+      // local mission review with identical detections every three seconds.
+      final events = <AiFinding>[];
+      for (var i = 0; i < accepted.length; i++) {
+        final detection = accepted[i];
+        final key = '${_camera.text.trim()}:${detection.category.name}';
+        final previous = _lastEventAt[key];
+        if (previous != null && now.difference(previous) < _eventCooldown) {
+          continue;
+        }
+        _lastEventAt[key] = now;
+        events.add(AiFinding(
+          id: '${now.microsecondsSinceEpoch}-$_ticks-$i',
+          source: _camera.text.trim(), category: detection.category,
+          confidence: detection.confidence, timestamp: now));
+      }
+      if (events.isNotEmpty) {
+        await widget.onDetections(events);
       }
     } catch (e) {
       if (mounted && _active) {
