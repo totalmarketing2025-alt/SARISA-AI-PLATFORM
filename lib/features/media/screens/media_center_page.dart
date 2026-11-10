@@ -146,7 +146,7 @@ class _MediaCenterPageState extends State<MediaCenterPage> {
         spacing: 12, runSpacing: 12,
         children: _sources.map((source) {
           final player = _players[source.id];
-          final ready = player != null && player.value.isInitialized;
+          final ready = player != null && player!.value.isInitialized;
           return SizedBox(
             width: constraints.maxWidth >= 740 ? (constraints.maxWidth - 12) / 2 : constraints.maxWidth,
             child: Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(
@@ -163,7 +163,7 @@ class _MediaCenterPageState extends State<MediaCenterPage> {
                 const SizedBox(height: 10),
                 AspectRatio(aspectRatio: 16 / 9, child: Container(
                   color: Colors.black,
-                  child: ready ? AspectRatio(aspectRatio: player.value.aspectRatio, child: VideoPlayer(player))
+                  child: ready ? AspectRatio(aspectRatio: player!.value.aspectRatio, child: VideoPlayer(player!))
                     : const Center(child: Icon(Icons.videocam_off_outlined, size: 42, color: Colors.white54)),
                 )),
                 if (_errors[source.id] != null) Padding(padding: const EdgeInsets.only(top: 8),
@@ -174,11 +174,11 @@ class _MediaCenterPageState extends State<MediaCenterPage> {
                     label: Text(ready ? 'DISCONNECT' : 'CONNECT')),
                   if (ready) OutlinedButton.icon(
                     onPressed: () async {
-                      if (player.value.isPlaying) { await player.pause(); } else { await player.play(); }
+                      if (player!.value.isPlaying) { await player!.pause(); } else { await player!.play(); }
                       if (mounted) setState(() {});
                     },
-                    icon: Icon(player.value.isPlaying ? Icons.pause : Icons.play_arrow),
-                    label: Text(player.value.isPlaying ? 'PAUSE' : 'PLAY')),
+                    icon: Icon(player!.value.isPlaying ? Icons.pause : Icons.play_arrow),
+                    label: Text(player!.value.isPlaying ? 'PAUSE' : 'PLAY')),
                   TextButton.icon(onPressed: () => _remove(source), icon: const Icon(Icons.delete_outline), label: const Text('REMOVE')),
                 ]),
               ],
