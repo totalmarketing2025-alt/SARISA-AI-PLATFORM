@@ -3,7 +3,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:sarisa/features/missions/models/mission_plan.dart';
 
 void main() {
-  final plan = MissionPlan(
+  final plan = const MissionPlan(
     id: 'mission-1', name: 'Search sector A', notes: 'Training mission',
     status: 'DRAFT', createdAt: '2026-11-10T00:00:00Z',
     waypoints: const [LatLng(41.9981, 21.4254), LatLng(42.0, 21.43)],
