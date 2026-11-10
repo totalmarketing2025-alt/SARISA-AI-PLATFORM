@@ -20,6 +20,51 @@ jobs:
           cache: true
       - name: Generate missing android platform project
         run: flutter create --platforms=android --project-name sarisa .
+      - name: Install Android SDK 36
+        run: |
+          yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36"
+      - name: Set compileSdk 36 for generated Android and plugin modules
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path("android/app/build.gradle.kts")
+          if not app.exists():
+              app = Path("android/app/build.gradle")
+          if not app.exists():
+              raise SystemExit("Generated Android app Gradle file missing")
+          source = app.read_text()
+          import re
+          source, count = re.subn(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 36', source)
+          if count == 0:
+              source, count = re.subn(r'compileSdkVersion\s+flutter\.compileSdkVersion', 'compileSdkVersion 36', source)
+          if count == 0:
+              raise SystemExit("Unable to locate app compileSdk setting")
+          app.write_text(source)
+          root = Path("android/build.gradle.kts")
+          if root.exists():
+              root.write_text(root.read_text() + """
+          subprojects {
+              plugins.withId("com.android.library") {
+                  extensions.configure<com.android.build.gradle.LibraryExtension> {
+                      compileSdk = 36
+                  }
+              }
+          }
+          """)
+          else:
+              root = Path("android/build.gradle")
+              if not root.exists():
+                  raise SystemExit("Android root Gradle file missing")
+              root.write_text(root.read_text() + """
+          subprojects { subproject ->
+              subproject.plugins.withId('com.android.library') {
+                  subproject.android.compileSdkVersion 36
+              }
+          }
+          """)
+          print("Android app and library modules configured for compileSdk 36")
+          PY
       - name: Flutter dependencies
         run: flutter pub get
       - name: Flutter tests
