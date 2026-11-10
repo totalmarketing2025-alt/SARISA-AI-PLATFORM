@@ -19,3 +19,19 @@
 6. Pass flutter analyze, flutter test, Android APK and Windows build CI.
 
 Do not claim that a stub, a mock test engine, or the external inference service is working offline AI.
+
+## Integration preparation added (2026-11-11)
+- `native_ai_manifest.dart`: pinned model metadata contract (SHA-256, license, version), with **no approved models** until review.
+- `vehicle_visual_search.dart`: local cosine similarity and ranked candidate search over embeddings supplied by a future on-device vehicle model. It cannot extract embeddings from photographs yet.
+- `plate_ocr_validation.dart`: format normalization and confidence review gate for output from a future local OCR model. It does not detect or read plates from images yet.
+- `test/native_ai_components_test.dart`: deterministic unit tests for these components; CI outcome has not yet been verified.
+
+### Required implementation sequence
+1. Select licensed detection, vehicle-embedding, plate-detector and OCR ONNX models; document provenance, accuracy, input/output tensors and hashes.
+2. Package verified models and ONNX Runtime Android/Windows libraries with a CPU execution path.
+3. Implement native bindings, frame preprocessing, decoding and postprocessing.
+4. Connect camera/video frame sources, bounded queues, overlay and operator review.
+5. Add restricted, encrypted local evidence store and retention/audit policy.
+6. Validate end-to-end on both platforms with offline tests and real camera/video.
+
+**Do not mistake integration preparation for working offline YOLO, image search, OCR or video inference.**
