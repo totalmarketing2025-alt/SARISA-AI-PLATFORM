@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/ai_finding.dart';
 import '../services/ai_finding_repository.dart';
+import '../services/live_inference_panel.dart';
+import '../../missions/services/mission_repository.dart';
 
 /// Phase 11 operator review workspace. Live inference is not connected yet.
 class AiAnalysisPage extends StatefulWidget {
@@ -61,9 +63,36 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
     }
   }
 
+  Future<void> _acceptLive(List<AiFinding> incoming) async {
+    if (!mounted) return;
+    setState(() => _findings = [...incoming, ..._findings].take(200).toList());
+    await _persist();
+  }
+
   Future<void> _review(AiFinding finding, ReviewStatus status) async {
     final notes = _notes.text.trim();
     final missionId = _mission.text.trim();
+    if (status == ReviewStatus.verified && missionId.isNotEmpty) {
+      try {
+        final repository = MissionRepository();
+        final missions = await repository.load();
+        final index = missions.indexWhere((mission) => mission.id == missionId);
+        if (index < 0) {
+          if (mounted) setState(() => _error = 'Mission ID not found; finding was not verified.');
+          return;
+        }
+        final mission = missions[index];
+        missions[index] = mission.copyWith(history: [
+          ...mission.history,
+          'AI finding ${finding.id} (${finding.category.name}, ${(finding.confidence * 100).round()}%) verified by operator at ${DateTime.now().toUtc().toIso8601String()}',
+        ]);
+        await repository.save(missions);
+      } catch (_) {
+        if (mounted) setState(() => _error = 'Unable to link finding to mission; verification cancelled.');
+        return;
+      }
+    }
+    if (!mounted) return;
     setState(() {
       _findings = _findings.map((item) => item.id == finding.id
         ? item.copyWith(status: status, notes: notes, missionId: missionId)
@@ -96,14 +125,17 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
       const Text('PHASE 11 • Operator-supervised findings and event review'),
       const SizedBox(height: 12),
       const Card(child: ListTile(
-        leading: Icon(Icons.science_outlined, color: Colors.amber),
-        title: Text('SIMULATION ONLY — LIVE AI NOT CONNECTED'),
-        subtitle: Text('Generated examples do not inspect camera frames. '
-          'No real-time detection, face identification or drone commands are active.'),
+        leading: Icon(Icons.shield_outlined, color: Colors.amber),
+        title: Text('LIVE AI REQUIRES EXTERNAL MODEL SERVICE'),
+        subtitle: Text('Live inference is optional and needs an authorized JPEG camera '
+          'and a configured HTTPS detection service. Simulation remains available.'),
       )),
       if (_error != null) Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Text(_error!, style: const TextStyle(color: Colors.orangeAccent))),
+      const SizedBox(height: 12),
+      LiveAiPanel(settings: AiAnalysisSettings(threshold: _threshold,
+        enabled: _enabled, mode: _mode), onDetections: _acceptLive),
       const SizedBox(height: 12),
       Wrap(spacing: 10, runSpacing: 10, children: [
         _metric('EVENTS', '${_findings.length}', Icons.event_note),
@@ -178,7 +210,7 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
           ]),
           const SizedBox(height: 6),
           Text('${finding.source} • ${finding.timestamp.toLocal()}'),
-          Text('SIMULATED • ${finding.status.name.toUpperCase()}',
+          Text('${finding.simulated ? 'SIMULATED' : 'LIVE SERVICE'} • ${finding.status.name.toUpperCase()}',
             style: const TextStyle(color: Colors.amber, fontSize: 12)),
           if (finding.missionId.isNotEmpty)
             Text('Mission reference: ${finding.missionId}'),
@@ -208,9 +240,9 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
         ]),
       ))),
       const SizedBox(height: 12),
-      const Text('Stored locally. Manual mission references do not modify '
-        'mission plans. Live frame inference and bounding-box overlays require '
-        'a separately validated cross-platform frame adapter and AI model.',
+      const Text('Findings are stored locally. Verified findings with a valid mission ID '
+        'are appended to mission history. Live inference uses an external model '
+        'and requires a compatible JPEG camera snapshot source.',
         style: TextStyle(color: Colors.white60, fontSize: 12)),
     ]);
   }
