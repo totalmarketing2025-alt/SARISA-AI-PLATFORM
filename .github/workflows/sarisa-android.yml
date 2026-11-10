@@ -80,8 +80,8 @@ jobs:
           for path in matches:
               source = path.read_text()
               updated = source
-              updated = re.sub(r'compileSdkVersion\\s*(?:=\\s*)?(?:flutter\\.compileSdkVersion|\\d+)', 'compileSdkVersion 36', updated)
-              updated = re.sub(r'compileSdk\\s*=\\s*(?:flutter\\.compileSdkVersion|\\d+)', 'compileSdk = 36', updated)
+              updated = re.sub(r'compileSdkVersion\s*(?:=\s*)?(?:flutter\.compileSdkVersion|\d+)', 'compileSdkVersion 36', updated)
+              updated = re.sub(r'compileSdk\s*=\s*(?:flutter\.compileSdkVersion|\d+)', 'compileSdk = 36', updated)
               if updated == source:
                   raise SystemExit(f"compileSdk declaration not found in {path}")
               path.write_text(updated)
