@@ -28,7 +28,7 @@ class LiveInferenceClient {
     final bytes = <int>[];
     await for (final chunk in response) {
       bytes.addAll(chunk);
-      if (bytes.length > 4000000) throw const FormatException('Frame exceeds 4MB');
+      if (bytes.length > 4000000) { throw const FormatException('Frame exceeds 4MB'); }
     }
     if (bytes.length < 4 || bytes[0] != 0xff || bytes[1] != 0xd8) {
       throw const FormatException('Camera did not return JPEG');
@@ -126,7 +126,7 @@ class _LiveAiPanelState extends State<LiveAiPanel> {
       _ticks++;
       if (accepted.isNotEmpty) {
         await widget.onDetections(accepted.map((d) => AiFinding(
-          id: '${now.microsecondsSinceEpoch}-${_ticks}-${accepted.indexOf(d)}',
+          id: '${now.microsecondsSinceEpoch}-$_ticks-${accepted.indexOf(d)}',
           source: _camera.text.trim(), category: d.category,
           confidence: d.confidence, timestamp: now)).toList());
       }
