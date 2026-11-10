@@ -17,7 +17,7 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
   final TextEditingController _mission = TextEditingController();
   final TextEditingController _notes = TextEditingController();
   List<AiFinding> _findings = [];
-  Set<DetectionCategory> _enabled = DetectionCategory.values.toSet();
+  final Set<DetectionCategory> _enabled = DetectionCategory.values.toSet();
   double _threshold = 0.75;
   String _mode = 'balanced';
   ReviewStatus? _filter;
