@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'features/simulation/screens/simulation_ops_page.dart';
 import 'package:video_player/video_player.dart';
 import 'features/dji/screens/dji_fleet_page.dart';
 import 'features/cases/screens/case_management_page.dart';
@@ -49,16 +50,16 @@ class _SarisaShellState extends State<SarisaShell> {
   int selected = 0;
   final pages = const [
     DashboardPage(), TacticalOpsPage(), MissionPage(), CaseManagementPage(),
-    VideoPage(), FlightPage(), DjiFleetPage(), SettingsPage()
+    VideoPage(), FlightPage(), DjiFleetPage(), SimulationOpsPage(), SettingsPage()
   ];
   final labels = const [
     'Overview', 'Tactical Ops', 'Missions', 'Search cases',
-    'Video link', 'Flight data', 'DJI Fleet', 'Settings'
+    'Video link', 'Flight data', 'DJI Fleet', 'Simulator', 'Settings'
   ];
   final icons = const [
     Icons.dashboard_outlined, Icons.radar, Icons.route,
     Icons.manage_search, Icons.videocam_outlined, Icons.sensors,
-    Icons.flight, Icons.settings_outlined
+    Icons.flight, Icons.science_outlined, Icons.settings_outlined
   ];
 
   @override
