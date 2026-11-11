@@ -106,7 +106,7 @@ class _SarisaShellState extends State<SarisaShell> {
   Widget _navigation({required bool wide}) => Container(
     width: wide ? 232 : null, color: const Color(0xFF101D16),
     child: Column(children: [
-      Padding(padding: const EdgeInsets.fromLTRB(16, 24, 12, 18),
+      const Padding(padding: EdgeInsets.fromLTRB(16, 24, 12, 18),
         child: Row(children: [
           const SarisaEmblem(size: 48), const SizedBox(width: 10),
           const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
