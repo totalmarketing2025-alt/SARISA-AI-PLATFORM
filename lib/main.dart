@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'features/media/screens/tactical_camera_wall.dart';
 import 'features/missions/screens/mission_planning_page.dart';
 import 'features/media/screens/media_center_page.dart';
 import 'features/ai/screens/ai_analysis_page.dart';
@@ -11,11 +12,11 @@ import 'features/tactical/screens/tactical_ops_page.dart';
 
 void main() => runApp(const SarisaApp());
 
-const navy = Color(0xFF071522);
-const panel = Color(0xFF102638);
-const blue = Color(0xFF19A7F5);
-const green = Color(0xFF19D39A);
-const muted = Color(0xFF8FA7B8);
+const navy = Color(0xFF09120F);
+const panel = Color(0xFF15251C);
+const blue = Color(0xFFB9D88D);
+const green = Color(0xFF9BCB78);
+const muted = Color(0xFF9BAD9E);
 
 class SarisaApp extends StatelessWidget {
   const SarisaApp({super.key});
@@ -43,6 +44,38 @@ class SarisaApp extends StatelessWidget {
       );
 }
 
+/// Stylized sarissa spear crossed with a contemporary radar reticle.
+/// Vector-drawn so it stays sharp in headers and at small sizes.
+class SarisaEmblem extends StatelessWidget {
+  final double size;
+  const SarisaEmblem({super.key, this.size = 42});
+  @override
+  Widget build(BuildContext context) => CustomPaint(size: Size.square(size),
+      painter: _SarisaEmblemPainter());
+}
+
+class _SarisaEmblemPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final s = size.width;
+    final gold = Paint()..color = const Color(0xFFD8B66B)
+      ..strokeWidth = s * .075..strokeCap = StrokeCap.round;
+    final ring = Paint()..color = const Color(0xFF8BBF83)
+      ..style = PaintingStyle.stroke..strokeWidth = s * .04;
+    final center = Offset(s * .5, s * .5);
+    canvas.drawCircle(center, s * .32, ring);
+    canvas.drawArc(Rect.fromCircle(center: center, radius: s * .40),
+        -.75, 1.50, false, ring);
+    canvas.drawLine(Offset(s * .12, s * .83), Offset(s * .79, s * .17), gold);
+    final tip = Path()..moveTo(s * .72, s * .12)
+      ..lineTo(s * .96, s * .04)..lineTo(s * .87, s * .29)..close();
+    canvas.drawPath(tip, Paint()..color = const Color(0xFFE5C980));
+    canvas.drawCircle(center, s * .06, Paint()..color = const Color(0xFFE5C980));
+  }
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
 class SarisaShell extends StatefulWidget {
   const SarisaShell({super.key});
   @override
@@ -51,106 +84,103 @@ class SarisaShell extends StatefulWidget {
 
 class _SarisaShellState extends State<SarisaShell> {
   int selected = 0;
-  final pages = const [
-    DashboardPage(), TacticalOpsPage(), MissionPlanningPage(), CaseManagementPage(),
-    MediaCenterPage(), AiAnalysisPage(), FlightPage(), DjiFleetPage(), SimulationOpsPage(), SettingsPage()
+  static const pages = <Widget>[
+    DashboardPage(), TacticalOpsPage(), TacticalCameraWall(),
+    AiAnalysisPage(), MissionPlanningPage(), CaseManagementPage(),
+    MediaCenterPage(), FlightPage(), DjiFleetPage(),
+    SimulationOpsPage(), SettingsPage(),
   ];
-  final labels = const [
-    'Overview', 'Tactical Ops', 'Missions', 'Search cases',
-    'Media center', 'AI analysis', 'Flight data', 'DJI Fleet', 'Simulator', 'Settings'
+  static const labels = <String>[
+    'COMMAND CENTER', 'TACTICAL OPS', 'CAMERA WALL', 'AI INTELLIGENCE',
+    'MISSION CONTROL', 'SEARCH CASES', 'MEDIA SOURCES', 'FLIGHT DATA',
+    'DJI FLEET', 'SIMULATOR', 'SYSTEM SETTINGS',
   ];
-  final icons = const [
-    Icons.dashboard_outlined, Icons.radar, Icons.route,
-    Icons.manage_search, Icons.videocam_outlined, Icons.psychology_outlined, Icons.sensors,
-    Icons.flight, Icons.science_outlined, Icons.settings_outlined
+  static const icons = <IconData>[
+    Icons.dashboard_customize_outlined, Icons.radar, Icons.grid_view,
+    Icons.center_focus_strong, Icons.route, Icons.folder_shared_outlined,
+    Icons.video_library_outlined, Icons.sensors, Icons.flight,
+    Icons.science_outlined, Icons.settings_outlined,
   ];
+  void _go(int index) => setState(() => selected = index);
+
+  Widget _navigation({required bool wide}) => Container(
+    width: wide ? 232 : null, color: const Color(0xFF101D16),
+    child: Column(children: [
+      Padding(padding: const EdgeInsets.fromLTRB(16, 24, 12, 18),
+        child: Row(children: [
+          const SarisaEmblem(size: 48), const SizedBox(width: 10),
+          const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('SARISA', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900,
+                  letterSpacing: 2, color: Color(0xFFE2C37A))),
+              Text('TACTICAL COMMAND', style: TextStyle(fontSize: 9, color: muted)),
+            ])),
+        ])),
+      const Divider(color: Color(0xFF385440), height: 1),
+      Expanded(child: ListView(padding: const EdgeInsets.all(8),
+        children: List.generate(labels.length, (i) => ListTile(
+          dense: true,
+          selected: selected == i,
+          selectedTileColor: const Color(0xFF293F2C),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+          leading: Icon(icons[i], color: selected == i ? blue : muted, size: 21),
+          title: Text(labels[i], style: TextStyle(fontSize: 11, letterSpacing: .5,
+              color: selected == i ? Colors.white : muted,
+              fontWeight: selected == i ? FontWeight.bold : FontWeight.normal)),
+          onTap: () { _go(i); if (!wide) Navigator.pop(context); },
+        )))),
+      const Padding(padding: EdgeInsets.all(12),
+        child: Text('SARISSA HERITAGE  /  MODERN INTELLIGENCE',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 8, color: muted))),
+    ]),
+  );
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width >= 850;
+    final wide = MediaQuery.sizeOf(context).width >= 900;
     return Scaffold(
+      drawer: wide ? null : Drawer(child: _navigation(wide: false)),
       body: Row(children: [
-        if (wide) _sidebar(),
+        if (wide) _navigation(wide: true),
         Expanded(child: Column(children: [
-          _topbar(),
+          Container(height: 62, padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: const BoxDecoration(color: Color(0xFF101D16),
+              border: Border(bottom: BorderSide(color: Color(0xFF385440)))),
+            child: Row(children: [
+              if (!wide) Builder(builder: (ctx) => IconButton(
+                tooltip: 'Open all modules', icon: const Icon(Icons.menu),
+                onPressed: () => Scaffold.of(ctx).openDrawer())),
+              if (!wide) const SarisaEmblem(size: 30),
+              if (!wide) const SizedBox(width: 8),
+              Expanded(child: Text(labels[selected], overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900,
+                  letterSpacing: 1.0, color: Color(0xFFD8C38C)))),
+              const Icon(Icons.circle, size: 9, color: Color(0xFFE3B36A)),
+              const SizedBox(width: 6),
+              const Text('DEMO / NO DRONE LINK',
+                style: TextStyle(color: Color(0xFFE3B36A), fontSize: 9)),
+            ])),
           Expanded(child: IndexedStack(index: selected, children: pages)),
         ])),
       ]),
-      bottomNavigationBar: wide ? null : SizedBox(
-        height: 68,
-        child: ListView.builder(
-          scrollDirection: Axis.horizontal,
-          itemCount: labels.length,
-          itemBuilder: (context, i) => InkWell(
-            onTap: () => setState(() => selected = i),
-            child: Container(
-              constraints: const BoxConstraints(minWidth: 82),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              color: selected == i ? const Color(0xFF123B55) : Colors.transparent,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+      bottomNavigationBar: wide ? null : SafeArea(top: false, child: Container(
+        color: const Color(0xFF101D16), height: 66,
+        child: Row(children: [
+          for (final i in [0, 1, 2, 3, 4])
+            Expanded(child: InkWell(onTap: () => _go(i),
+              child: Column(mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(icons[i], size: 20, color: selected == i ? green : muted),
-                  const SizedBox(height: 4),
-                  Text(labels[i], style: TextStyle(
-                    fontSize: 9, color: selected == i ? green : muted,
-                  )),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
+                  Icon(icons[i], size: 20, color: selected == i ? blue : muted),
+                  const SizedBox(height: 5),
+                  Text(i == 0 ? 'HOME' : i == 1 ? 'OPS' : i == 2 ? 'CAMERAS' :
+                      i == 3 ? 'AI' : 'MISSIONS',
+                    style: TextStyle(fontSize: 9, color: selected == i ? blue : muted)),
+                ]))),
+        ]),
+      )),
     );
   }
-
-  Widget _sidebar() => Container(
-    width: 230, color: const Color(0xFF091B2A),
-    padding: const EdgeInsets.all(18),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const SizedBox(height: 14),
-      const Row(children: [
-        Icon(Icons.radar, color: green, size: 30),
-        SizedBox(width: 10),
-        Text('SARISA', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900, letterSpacing: 2)),
-      ]),
-      const Text('SEARCH • RESCUE • AWARENESS', style: TextStyle(fontSize: 8, color: muted)),
-      const SizedBox(height: 34),
-      ...List.generate(labels.length, (i) => Padding(
-        padding: const EdgeInsets.only(bottom: 7),
-        child: Material(
-          color: Colors.transparent,
-          child: ListTile(
-          selected: selected == i,
-          selectedTileColor: const Color(0xFF123B55),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          leading: Icon(icons[i], color: selected == i ? green : muted),
-          title: Text(labels[i], style: const TextStyle(fontSize: 13)),
-          onTap: () => setState(() => selected = i),
-          ),
-        ),
-      )),
-      const Spacer(),
-      const Text('SARISA CORE  •  DEMO MODE', style: TextStyle(color: muted, fontSize: 9)),
-    ]),
-  );
-
-  Widget _topbar() => Container(
-    height: 66, padding: const EdgeInsets.symmetric(horizontal: 22),
-    decoration: const BoxDecoration(
-      border: Border(bottom: BorderSide(color: Color(0xFF1C3548))),
-    ),
-    child: Row(children: [
-      const Text('SYSTEM / ', style: TextStyle(color: muted, fontSize: 11)),
-      Text(labels[selected].toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
-      const Spacer(),
-      const Icon(Icons.circle, color: green, size: 9),
-      const SizedBox(width: 7),
-      const Text('SYSTEM ONLINE', style: TextStyle(color: green, fontSize: 10, fontWeight: FontWeight.bold)),
-      const SizedBox(width: 18),
-      const CircleAvatar(radius: 15, backgroundColor: Color(0xFF1B4964), child: Icon(Icons.person_outline, size: 18)),
-    ]),
-  );
 }
 
 class PageFrame extends StatelessWidget {
