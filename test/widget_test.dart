@@ -13,5 +13,7 @@ void main() {
 
     expect(find.text('SARISA'), findsWidgets);
     expect(find.text('COMMAND CENTER'), findsWidgets);
+    expect(tester.takeException(), isNull,
+        reason: 'SARISA startup must not throw framework exceptions');
   });
 }
