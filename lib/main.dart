@@ -103,9 +103,10 @@ class _SarisaShellState extends State<SarisaShell> {
   ];
   void _go(int index) => setState(() => selected = index);
 
-  Widget _navigation({required bool wide}) => Container(
-    width: wide ? 232 : null, color: const Color(0xFF101D16),
-    child: Column(children: [
+  Widget _navigation({required bool wide}) => Material(
+    color: const Color(0xFF101D16),
+    child: SizedBox(width: wide ? 232 : null,
+      child: Column(children: [
       const Padding(padding: EdgeInsets.fromLTRB(16, 24, 12, 18),
         child: Row(children: [
           SarisaEmblem(size: 48), SizedBox(width: 10),
@@ -133,7 +134,8 @@ class _SarisaShellState extends State<SarisaShell> {
         child: Text('SARISSA HERITAGE  /  MODERN INTELLIGENCE',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 8, color: muted))),
-    ]),
+      ]),
+    ),
   );
 
   @override
