@@ -1,10 +1,13 @@
-name: SARISA Android APK
+name: SARISA Build Android + Windows
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
+concurrency:
+  group: sarisa-build-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   android:
     runs-on: ubuntu-latest
@@ -95,4 +98,31 @@ jobs:
         with:
           name: sarisa-android-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate missing Windows platform project
+        run: flutter create --platforms=windows --project-name sarisa .
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+      - name: Flutter dependencies
+        run: flutter pub get
+      - name: Flutter tests
+        run: flutter test
+      - name: Build Windows release
+        run: flutter build windows --release
+      - name: Package Windows release
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "build/windows/x64/runner/Release/*" -DestinationPath "sarisa-windows.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sarisa-windows-zip
+          path: sarisa-windows.zip
           if-no-files-found: error
