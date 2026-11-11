@@ -12,6 +12,6 @@ void main() {
     await tester.pumpWidget(const SarisaApp());
 
     expect(find.text('SARISA'), findsWidgets);
-    expect(find.text('Operations overview'), findsOneWidget);
+    expect(find.text('COMMAND CENTER'), findsWidgets);
   });
 }
