@@ -23,6 +23,10 @@ jobs:
           cache: true
       - name: Generate missing android platform project
         run: flutter create --platforms=android --project-name sarisa .
+      - name: Generate SARISA Android app icon
+        run: |
+          python3 -m pip install Pillow
+          python3 tool/generate_brand_icons.py --platform android
       - name: Configure Android camera permission
         shell: bash
         run: |
@@ -122,6 +126,10 @@ jobs:
           cache: true
       - name: Generate missing Windows platform project
         run: flutter create --platforms=windows --project-name sarisa .
+      - name: Generate SARISA Windows app icon
+        run: |
+          python -m pip install Pillow
+          python tool/generate_brand_icons.py --platform windows
       - name: Enable Windows desktop
         run: flutter config --enable-windows-desktop
       - name: Flutter dependencies
