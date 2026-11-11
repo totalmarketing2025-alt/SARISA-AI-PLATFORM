@@ -87,26 +87,6 @@ jobs:
           PY
       - name: Flutter dependencies
         run: flutter pub get
-      - name: Enforce compileSdk 36 in file_picker plugin
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import os, re
-          cache = Path.home() / ".pub-cache" / "hosted" / "pub.dev"
-          matches = list(cache.glob("file_picker-*/android/build.gradle")) + list(cache.glob("file_picker-*/android/build.gradle.kts"))
-          if not matches:
-              raise SystemExit("file_picker Android Gradle file not found")
-          for path in matches:
-              source = path.read_text()
-              updated = source
-              updated = re.sub(r'compileSdkVersion\s*(?:=\s*)?(?:flutter\.compileSdkVersion|\d+)', 'compileSdkVersion 36', updated)
-              updated = re.sub(r'compileSdk\s*=\s*(?:flutter\.compileSdkVersion|\d+)', 'compileSdk = 36', updated)
-              if updated == source:
-                  raise SystemExit(f"compileSdk declaration not found in {path}")
-              path.write_text(updated)
-              print(f"Set compileSdk 36 in {path}")
-          PY
       - name: Flutter tests
         run: flutter test
       - name: Build release APK
