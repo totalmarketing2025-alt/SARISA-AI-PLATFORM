@@ -23,6 +23,19 @@ jobs:
           cache: true
       - name: Generate missing android platform project
         run: flutter create --platforms=android --project-name sarisa .
+      - name: Configure Android camera permission
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          source = manifest.read_text()
+          permission = '<uses-permission android:name="android.permission.CAMERA" />'
+          if permission not in source:
+              source = source.replace('<application', permission + '\\n    <application', 1)
+              manifest.write_text(source)
+          print("Android camera permission configured")
+          PY
       - name: Install Android SDK 36
         run: |
           yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
