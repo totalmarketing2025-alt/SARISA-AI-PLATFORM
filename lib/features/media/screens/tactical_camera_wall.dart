@@ -4,6 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import '../../ai/models/ai_finding.dart';
 import '../../ai/services/native_ai_engine.dart';
 import '../../ai/services/yolox_onnx_engine.dart';
 import '../../ai/services/plate_ocr_onnx_engine.dart';
@@ -143,7 +144,9 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
       final tracks = trackCameraFrames
           ? _objectTracker.update(detections)
           : <TrackedDetection>[];
-      if (!trackCameraFrames) _objectTracker.reset();
+      if (!trackCameraFrames) {
+        _objectTracker.reset();
+      }
       final frameId = 'frame-${++_frameSequence}';
       final newCandidates = <VehicleVisualCandidate>[];
       for (var i = 0; i < detections.length; i++) {
