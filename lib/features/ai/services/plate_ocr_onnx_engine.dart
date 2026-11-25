@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 import 'package:image/image.dart' as img;
 
+import '../models/ai_finding.dart';
 import 'native_ai_engine.dart';
 import 'plate_ocr_validation.dart';
 
@@ -128,7 +129,7 @@ class PlateOcrOnnxEngine {
     final resized = img.copyResize(crop, width: resizedWidth, height: inputHeight,
         interpolation: img.Interpolation.linear);
     final tensorData = Float32List(3 * inputHeight * inputWidth);
-    final plane = inputHeight * inputWidth;
+    const plane = inputHeight * inputWidth;
     for (var row = 0; row < inputHeight; row++) {
       for (var col = 0; col < resizedWidth; col++) {
         final pixel = resized.getPixel(col, row);
@@ -227,9 +228,9 @@ class PlateOcrOnnxEngine {
         final offset = y * image.width + x;
         final factor = normalize ? 1 / 127.5 : 1;
         final shift = normalize ? 1 : 0;
-        data[offset] = pixel.b * factor - shift;
-        data[plane + offset] = pixel.g * factor - shift;
-        data[2 * plane + offset] = pixel.r * factor - shift;
+        data[offset] = (pixel.b * factor - shift).toDouble();
+        data[plane + offset] = (pixel.g * factor - shift).toDouble();
+        data[2 * plane + offset] = (pixel.r * factor - shift).toDouble();
       }
     }
     return data;
