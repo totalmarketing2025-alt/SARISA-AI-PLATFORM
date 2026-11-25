@@ -1,8 +1,17 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:camera/camera.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import '../../ai/models/ai_finding.dart';
 import '../../ai/services/native_ai_engine.dart';
+import '../../ai/services/yolox_onnx_engine.dart';
+import '../../ai/services/plate_ocr_onnx_engine.dart';
+import '../../ai/services/vehicle_visual_search.dart';
+import '../../ai/services/plate_ocr_validation.dart';
+import '../../ai/services/anonymous_object_tracker.dart';
+import '../../ai/services/rescue_snapshot_assessment.dart';
 
 const _bg = Color(0xFF09120F);
 const _surface = Color(0xFF15251C);
@@ -25,7 +34,24 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
   bool _connecting = false;
   String? _cameraError;
   NativeAiStatus _ai = const NativeAiStatus(false, 'MODEL NOT LOADED');
-  final _engine = const UnavailableNativeAiEngine();
+  final _engine = YoloxOnnxEngine();
+  final _plateOcr = PlateOcrOnnxEngine();
+  final _objectTracker = AnonymousObjectTracker();
+  List<TrackedDetection> _trackedDetections = const [];
+  bool _ocrReady = false;
+  bool _ocrBusy = false;
+  String? _ocrStatus;
+  List<PlateOcrCandidate> _plateCandidates = const [];
+  List<NativeDetection> _detections = const [];
+  RescueSnapshotAssessment? _rescueAssessment;
+  final Map<int, RescueOperatorAssessment> _operatorAssessments = {};
+  Uint8List? _currentImage;
+  int _frameSequence = 0;
+  String? _currentFrameId;
+  final List<VehicleVisualCandidate> _vehicleCorpus = [];
+  List<({String frameId, double score})> _vehicleMatches = const [];
+  bool _modelLoading = false;
+  bool _analysisBusy = false;
   final _urls = List.generate(3, (_) => TextEditingController());
   final _players = <int, VideoPlayerController>{};
   final _errors = <int, String>{};
@@ -34,12 +60,13 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
   @override
   void initState() {
     super.initState();
-    _checkAi();
   }
 
-  Future<void> _checkAi() async {
+  Future<void> _loadAi() async {
+    if (_ai.ready || _modelLoading) return;
+    setState(() => _modelLoading = true);
     final status = await _engine.initialize();
-    if (mounted) setState(() => _ai = status);
+    if (mounted) setState(() { _ai = status; _modelLoading = false; });
   }
 
   Future<void> _startCamera({bool switchLens = false}) async {
@@ -48,6 +75,10 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
       return;
     }
     if (_connecting) return;
+    if (switchLens) {
+      _objectTracker.reset();
+      _trackedDetections = const [];
+    }
     setState(() { _connecting = true; _cameraError = null; });
     try {
       _available = await availableCameras();
@@ -70,7 +101,153 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
   Future<void> _stopCamera() async {
     final previous = _camera;
     setState(() => _camera = null);
+    _objectTracker.reset();
+    setState(() => _trackedDetections = const []);
     await previous?.dispose();
+  }
+
+  Future<void> _analyzeSnapshot() async {
+    final camera = _camera;
+    if (camera == null || !camera.value.isInitialized || !_ai.ready || _analysisBusy) return;
+    setState(() { _analysisBusy = true; _cameraError = null; });
+    try {
+      final photo = await camera.takePicture();
+      final bytes = await photo.readAsBytes();
+      await _analyzeBytes(bytes, trackCameraFrames: true);
+    } catch (error) {
+      if (mounted) setState(() => _cameraError = 'Offline model inference failed: $error');
+    } finally {
+      if (mounted) setState(() => _analysisBusy = false);
+    }
+  }
+
+  Future<void> _analyzeLocalImage() async {
+    if (!_ai.ready || _analysisBusy) return;
+    try {
+      final selection = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        withData: true,
+      );
+      if (selection == null || selection.files.isEmpty) return;
+      final file = selection.files.single;
+      final bytes = file.bytes ?? (file.path == null ? null : await File(file.path!).readAsBytes());
+      if (bytes == null) throw StateError('Could not read the selected image.');
+      await _analyzeBytes(bytes);
+    } catch (error) {
+      if (mounted) setState(() => _cameraError = 'Offline model inference failed: $error');
+    } finally {
+      if (mounted) setState(() => _analysisBusy = false);
+    }
+  }
+
+  Future<void> _analyzeBytes(Uint8List bytes, {bool trackCameraFrames = false}) async {
+    setState(() { _analysisBusy = true; _cameraError = null; });
+    try {
+      final detections = await _engine.detectJpeg(bytes);
+      final rescueAssessment = RescueSnapshotAssessment.fromDetections(detections);
+      final tracks = trackCameraFrames
+          ? _objectTracker.update(detections)
+          : <TrackedDetection>[];
+      if (!trackCameraFrames) {
+        _objectTracker.reset();
+      }
+      final frameId = 'frame-${++_frameSequence}';
+      final newCandidates = <VehicleVisualCandidate>[];
+      for (var i = 0; i < detections.length; i++) {
+        final detection = detections[i];
+        if (detection.category != DetectionCategory.vehicle) continue;
+        newCandidates.add(VehicleVisualCandidate('$frameId-vehicle-$i',
+          VehicleVisualSearch.describeJpeg(bytes, x: detection.x, y: detection.y,
+            width: detection.width, height: detection.height)));
+      }
+      if (mounted) {
+        setState(() {
+          _currentImage = bytes;
+          _currentFrameId = frameId;
+          _detections = detections;
+          _rescueAssessment = rescueAssessment;
+          _operatorAssessments.clear();
+          _trackedDetections = tracks;
+          _vehicleMatches = const [];
+          _plateCandidates = const [];
+          _ocrStatus = null;
+          _vehicleCorpus.addAll(newCandidates);
+          if (_vehicleCorpus.length > 500) {
+            _vehicleCorpus.removeRange(0, _vehicleCorpus.length - 500);
+          }
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _analysisBusy = false);
+    }
+  }
+
+  String? _trackIdFor(NativeDetection detection) {
+    for (final track in _trackedDetections) {
+      if (identical(track.detection, detection)) return track.trackId.toString();
+    }
+    return null;
+  }
+
+  void _searchSimilarVehicles() {
+    final bytes = _currentImage;
+    if (bytes == null || _currentFrameId == null) return;
+    try {
+      final query = <List<double>>[];
+      for (final detection in _detections) {
+        if (detection.category == DetectionCategory.vehicle) {
+          query.add(VehicleVisualSearch.describeJpeg(bytes, x: detection.x,
+            y: detection.y, width: detection.width, height: detection.height));
+        }
+      }
+      if (query.isEmpty) {
+        setState(() => _cameraError = 'No vehicle crop in the selected image.');
+        return;
+      }
+      final candidates = _vehicleCorpus.where((item) =>
+        !item.localFrameId.startsWith('$_currentFrameId-')).toList();
+      final ranked = <({String frameId, double score})>[];
+      for (final vector in query) {
+        ranked.addAll(VehicleVisualSearch.rank(vector, candidates, limit: 20));
+      }
+      final bestByFrame = <String, double>{};
+      for (final match in ranked) {
+        if (match.score < 0) continue;
+        final previous = bestByFrame[match.frameId];
+        if (previous == null || match.score > previous) bestByFrame[match.frameId] = match.score;
+      }
+      final results = bestByFrame.entries.map((entry) =>
+        (frameId: entry.key, score: entry.value)).toList()
+        ..sort((a, b) => b.score.compareTo(a.score));
+      setState(() {
+        _vehicleMatches = results.take(10).toList();
+        _cameraError = null;
+      });
+    } catch (error) {
+      setState(() => _cameraError = 'Vehicle appearance search failed: $error');
+    }
+  }
+
+  Future<void> _runPlateOcr() async {
+    final bytes = _currentImage;
+    if (bytes == null || _ocrBusy) return;
+    setState(() { _ocrBusy = true; _ocrStatus = 'LOADING LOCAL OCR'; });
+    try {
+      if (!_ocrReady) {
+        final status = await _plateOcr.initialize();
+        if (!status.ready) throw StateError(status.message);
+        _ocrReady = true;
+      }
+      final candidates = await _plateOcr.readVehicleText(bytes, _detections);
+      if (mounted) setState(() {
+        _plateCandidates = candidates;
+        _ocrStatus = candidates.isEmpty ? 'NO PLATE-SHAPED TEXT FOUND' : null;
+      });
+    } catch (error) {
+      if (mounted) setState(() => _ocrStatus = 'LOCAL OCR FAILED: $error');
+    } finally {
+      if (mounted) setState(() => _ocrBusy = false);
+    }
   }
 
   Future<void> _connect(int slot) async {
@@ -106,6 +283,7 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
     for (final p in _players.values) { p.dispose(); }
     for (final c in _urls) { c.dispose(); }
     _engine.dispose();
+    _plateOcr.dispose();
     super.dispose();
   }
 
@@ -143,6 +321,13 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
             OutlinedButton.icon(onPressed: _connecting || !active || _available.length < 2 ? null :
                 () => _startCamera(switchLens: true),
                 icon: const Icon(Icons.flip_camera_android, size: 16), label: const Text('FLIP')),
+            FilledButton.tonalIcon(
+              onPressed: active && _ai.ready && !_analysisBusy ? _analyzeSnapshot : null,
+              icon: _analysisBusy
+                  ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.document_scanner_outlined, size: 16),
+              label: Text(_analysisBusy ? 'ANALYZING OFFLINE' : 'ANALYZE SNAPSHOT'),
+            ),
           ]) :
           Column(children: [
             TextField(controller: _urls[index - 1], style: const TextStyle(fontSize: 12),
@@ -162,6 +347,63 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
     );
   }
 
+  Widget _rescueReviewCard(RescueSnapshotAssessment assessment) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: const Color(0xFF101C16),
+      border: Border.all(color: _line),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('SAR PERSON CHECK',
+          style: TextStyle(color: _accent, fontWeight: FontWeight.bold)),
+      const SizedBox(height: 5),
+      Text('People detected in this snapshot: ${assessment.peopleCount}',
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+      if (assessment.possibleHorizontalPostureCount > 0)
+        Padding(
+          padding: const EdgeInsets.only(top: 5),
+          child: Text('Visual cue: ${assessment.possibleHorizontalPostureCount} person box(es) have a wide/horizontal shape. Verify posture and condition in the image; this is not an injury diagnosis.',
+              style: const TextStyle(color: _amber, fontSize: 12)),
+        )
+      else
+        const Padding(
+          padding: EdgeInsets.only(top: 5),
+          child: Text('No wide/horizontal posture cue. The model cannot determine injury or whether someone is asking for help.',
+              style: TextStyle(color: Colors.white70, fontSize: 12)),
+        ),
+      for (final person in assessment.people) ...[
+        const SizedBox(height: 6),
+        Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          Expanded(child: Text(
+            'Person ${person.frameIndex} • ${(person.confidence * 100).toStringAsFixed(0)}%${person.possibleHorizontalPosture ? ' • posture cue' : ''}',
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          )),
+          const SizedBox(width: 8),
+          Flexible(child: DropdownButton<RescueOperatorAssessment>(
+            value: _operatorAssessments[person.frameIndex] ?? RescueOperatorAssessment.unreviewed,
+            isExpanded: true,
+            dropdownColor: _surface,
+            style: const TextStyle(color: Colors.white, fontSize: 11),
+            items: [
+              for (final option in RescueOperatorAssessment.values)
+                DropdownMenuItem(value: option,
+                  child: Text(option.label, overflow: TextOverflow.ellipsis)),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() => _operatorAssessments[person.frameIndex] = value);
+            },
+          )),
+        ]),
+      ],
+      const SizedBox(height: 5),
+      const Text('Person numbers are temporary for this image. Injury/help selections are operator assessments and are not saved as diagnoses.',
+          style: TextStyle(color: Colors.white54, fontSize: 10)),
+    ]),
+  );
+
   @override
   Widget build(BuildContext context) => Container(color: _bg, child: LayoutBuilder(
     builder: (context, constraints) {
@@ -173,6 +415,9 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
         const SizedBox(height: 6),
         const Text('Four feeds • local Android camera test • operator-authorized HTTPS streams',
             style: TextStyle(color: Colors.white70, fontSize: 12)),
+        const SizedBox(height: 4),
+        const Text('PHONE → WINDOWS: no direct camera link is configured. Windows feeds require an external HTTPS streaming gateway.',
+            style: TextStyle(color: _amber, fontSize: 11)),
         const SizedBox(height: 12),
         Wrap(spacing: 10, runSpacing: 8, children: [
           Chip(label: Text('CAMERAS: ${(_camera?.value.isInitialized ?? false ? 1 : 0) + _players.length}/4')),
@@ -193,10 +438,73 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
             const SizedBox(height: 8),
             Text(_ai.message, style: const TextStyle(color: _amber)),
             const SizedBox(height: 8),
-            FilledButton.icon(onPressed: _ai.ready ? () {} : null,
-                icon: const Icon(Icons.play_arrow), label: const Text('START REAL AI')),
+            if (!_ai.ready) FilledButton.tonalIcon(
+              onPressed: _modelLoading ? null : _loadAi,
+              icon: _modelLoading
+                  ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.memory),
+              label: Text(_modelLoading ? 'LOADING LOCAL MODEL' : 'LOAD OFFLINE YOLOX MODEL'),
+            ),
+            FilledButton.icon(onPressed: _ai.ready && _camera?.value.isInitialized == true && !_analysisBusy
+                ? _analyzeSnapshot : null,
+                icon: const Icon(Icons.play_arrow), label: const Text('ANALYZE LOCAL SNAPSHOT')),
+            const SizedBox(height: 6),
+            OutlinedButton.icon(
+              onPressed: _ai.ready && !_analysisBusy ? _analyzeLocalImage : null,
+              icon: const Icon(Icons.image_search_outlined),
+              label: const Text('PICK IMAGE AND ANALYZE OFFLINE'),
+            ),
+            if (_rescueAssessment != null) ...[
+              const SizedBox(height: 12),
+              _rescueReviewCard(_rescueAssessment!),
+            ],
+            if (_detections.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('LOCAL DETECTIONS: ${_detections.length}',
+                  style: const TextStyle(color: _accent, fontWeight: FontWeight.bold)),
+              if (_trackedDetections.isNotEmpty)
+                const Text('TEMPORARY TRACK IDs apply only to vehicles, animals and objects across camera snapshots.',
+                    style: TextStyle(color: Colors.white70, fontSize: 11)),
+              const SizedBox(height: 4),
+              for (final detection in _detections.take(12))
+                Text('${_trackIdFor(detection) == null ? '' : 'T${_trackIdFor(detection)} • '}${detection.label} • ${(detection.confidence * 100).toStringAsFixed(1)}% • ${detection.category.name}',
+                    style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              if (_detections.any((d) => d.category == DetectionCategory.vehicle)) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _vehicleCorpus.length > 1 ? _searchSimilarVehicles : null,
+                  icon: const Icon(Icons.manage_search),
+                  label: const Text('SEARCH SIMILAR VEHICLES IN THIS SESSION'),
+                ),
+                const Text('Ranks visual candidates from local session frames. Similarity is not vehicle identity.',
+                    style: TextStyle(color: Colors.white70, fontSize: 11)),
+                for (final match in _vehicleMatches.take(5))
+                  Text('${match.frameId} • visual similarity ${(match.score * 100).toStringAsFixed(1)}% • operator review',
+                      style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                OutlinedButton.icon(
+                  onPressed: _ocrBusy || _analysisBusy ? null : _runPlateOcr,
+                  icon: _ocrBusy
+                      ? const SizedBox(width: 15, height: 15,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.document_scanner_outlined),
+                  label: Text(_ocrBusy ? 'READING LOCAL PLATE TEXT' : 'READ PLATE TEXT OFFLINE'),
+                ),
+                if (_ocrStatus != null) Text(_ocrStatus!,
+                  style: const TextStyle(color: _amber, fontSize: 11)),
+                for (final candidate in _plateCandidates)
+                  Text('${candidate.normalized} • ${(candidate.confidence * 100).toStringAsFixed(1)}% • VERIFY VISUALLY',
+                    style: const TextStyle(color: _amber, fontSize: 12)),
+                if (_plateCandidates.isNotEmpty)
+                  const Text('Suggestions are temporary and unconfirmed. No owner or registry lookup is performed.',
+                    style: TextStyle(color: Colors.white70, fontSize: 11)),
+              ],
+            ] else if (!_analysisBusy && _ai.ready) ...[
+              const SizedBox(height: 5),
+              const Text('No local detections yet. Capture a snapshot to run the offline model.',
+                  style: TextStyle(color: Colors.white70, fontSize: 12)),
+            ],
             const SizedBox(height: 5),
-            const Text('AI inference is disabled until a licensed model and native ONNX runtime are installed. Camera preview does not imply detection.',
+            const Text('The packaged YOLOX-Nano model analyzes phone-camera snapshots locally. It detects COCO-80 classes only; external streams are preview-only.',
                 style: TextStyle(color: Colors.white70, fontSize: 12)),
           ]))),
       ]);

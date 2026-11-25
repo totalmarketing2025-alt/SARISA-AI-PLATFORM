@@ -8,10 +8,18 @@ Flutter starter application targeting Android and Windows. This repository is a 
 - Dark SARISA operator dashboard
 - Mission draft screen
 - Reference image upload for human-reviewed case records
-- View-only network video URL player (supported formats depend on gateway)
+- View-only HTTPS network video URL player (supported formats depend on gateway)
+- Offline YOLOX snapshot analysis with anonymous, per-frame person counts
+- Operator-reviewed SAR triage cues; no automated injury or distress diagnosis
 - Telemetry display placeholders
 - Disabled flight-control simulator panel
 - Integration placeholders for maps, drone adapters and communications
+
+## SAR camera and Android permissions
+- On Android, CAM 01 previews the phone camera and runs YOLOX locally on snapshots. The current Android camera feed is **not streamed or paired to the Windows monitor**.
+- On Windows, CAM 02–04 can preview externally hosted HTTPS media URLs. The player must support the media format. A phone-to-Windows live feed needs a separately configured, authenticated streaming gateway; the current app does not provide one.
+- The Android CI build generates the platform project and adds Internet, Camera, and foreground coarse/fine location manifest permissions. Camera and location are requested at runtime when used. Microphone, background location, and broad storage permissions are not requested.
+- Person counts and possible wide/horizontal box cues are generated from each analyzed snapshot only. Injury and requests for help cannot be reliably inferred by the packaged COCO-80 detector; these remain operator assessments, not model diagnoses.
 
 ## Safety and scope
 This starter does not implement biometric identification, face matching, identity-based tracking, autonomous person following, weapon interfaces, or physical drone flight commands. Visual-analysis extensions should be limited to non-identifying scene/object classification for lawful Search & Rescue, with human review and privacy safeguards.

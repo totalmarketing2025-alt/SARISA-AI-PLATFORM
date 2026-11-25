@@ -13,80 +13,85 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch and verify offline YOLOX model
+        run: python3 native_ai/fetch_model.py
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
       - name: Generate missing android platform project
         run: flutter create --platforms=android --project-name sarisa .
+      - name: Configure ONNX Runtime Android keep rules
+        run: |
+          mkdir -p android/app
+          printf '%s\n' '-keep class ai.onnxruntime.** { *; }' > android/app/proguard-rules.pro
       - name: Generate SARISA Android app icon
         run: |
           python3 -m pip install Pillow
           python3 tool/generate_brand_icons.py --platform android
-      - name: Configure Android camera permission
+      - name: Configure Android SAR runtime permissions
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
           manifest = Path("android/app/src/main/AndroidManifest.xml")
           source = manifest.read_text()
-          permission = '<uses-permission android:name="android.permission.CAMERA" />'
-          if permission not in source:
-              source = source.replace('<application', permission + '\n    <application', 1)
-              manifest.write_text(source)
-          print("Android camera permission configured")
+          permissions = [
+              "android.permission.INTERNET",
+              "android.permission.CAMERA",
+              "android.permission.ACCESS_COARSE_LOCATION",
+              "android.permission.ACCESS_FINE_LOCATION",
+          ]
+          for permission in permissions:
+              declaration = f'<uses-permission android:name="{permission}" />'
+              if declaration not in source:
+                  source = source.replace(
+                      "<application", f"    {declaration}\n    <application", 1
+                  )
+          manifest.write_text(source)
+          print("Configured internet, camera and foreground location permissions")
           PY
       - name: Install Android SDK 36
         run: |
           yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36"
-      - name: Set compileSdk 36 for generated Android and plugin modules
+      - name: Flutter dependencies
+        run: flutter pub get
+      - name: Set compileSdk 36 for Android and cached Flutter plugins
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          app = Path("android/app/build.gradle.kts")
-          if not app.exists():
-              app = Path("android/app/build.gradle")
-          if not app.exists():
-              raise SystemExit("Generated Android app Gradle file missing")
-          source = app.read_text()
           import re
-          source, count = re.subn(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 36', source)
-          if count == 0:
-              source, count = re.subn(r'compileSdkVersion\s+flutter\.compileSdkVersion', 'compileSdkVersion 36', source)
-          if count == 0:
-              raise SystemExit("Unable to locate app compileSdk setting")
-          app.write_text(source)
-          root = Path("android/build.gradle.kts")
-          if root.exists():
-              root.write_text(root.read_text() + """
-          subprojects {
-              plugins.withId("com.android.library") {
-                  extensions.configure<com.android.build.gradle.LibraryExtension> {
-                      compileSdk = 36
-                  }
-              }
-          }
-          """)
-          else:
-              root = Path("android/build.gradle")
+          roots = [Path("android"), Path.home() / ".pub-cache/hosted/pub.dev"]
+          pattern = re.compile(
+              r'(?m)^(\s*compileSdk(?:Version)?\s*(?:=\s*)?)'
+              r'(?:flutter\.compileSdkVersion|\d+)(\s*(?://.*)?)$'
+          )
+          changed = 0
+          for root in roots:
               if not root.exists():
-                  raise SystemExit("Android root Gradle file missing")
-              root.write_text(root.read_text() + """
-          subprojects { subproject ->
-              subproject.plugins.withId('com.android.library') {
-                  subproject.android.compileSdkVersion 36
-              }
-          }
-          """)
-          print("Android app and library modules configured for compileSdk 36")
+                  continue
+              for gradle_file in root.rglob("build.gradle*"):
+                  if gradle_file.name not in ("build.gradle", "build.gradle.kts"):
+                      continue
+                  source = gradle_file.read_text()
+                  updated, count = pattern.subn(
+                      lambda match: match.group(1) + "36" + match.group(2), source
+                  )
+                  if count:
+                      gradle_file.write_text(updated)
+                      changed += count
+                      print(f"Configured compileSdk 36: {gradle_file}")
+          if changed == 0:
+              raise SystemExit("No Android compileSdk settings were found to update")
+          print(f"Updated {changed} Android compileSdk settings")
           PY
-      - name: Flutter dependencies
-        run: flutter pub get
+      - name: Flutter static analysis
+        run: flutter analyze --no-fatal-infos
       - name: Flutter tests
         run: flutter test
       - name: Build release APK
@@ -100,12 +105,46 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch and verify offline YOLOX model
+        run: python native_ai/fetch_model.py
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
       - name: Generate missing Windows platform project
         run: flutter create --platforms=windows --project-name sarisa .
+      - name: Prepare verified Windows ONNX Runtime from NuGet
+        shell: pwsh
+        run: |
+          $path = "windows/CMakeLists.txt"
+          $source = Get-Content $path -Raw
+          $needle = "include(flutter/generated_plugins.cmake)"
+          $version = "1.28.0"
+          if ($source -notmatch 'set\(ONNXRUNTIME_VERSION') {
+            if (-not $source.Contains($needle)) { throw "Could not find generated plugin include in $path" }
+            $source = $source.Replace($needle, "set(ONNXRUNTIME_VERSION `"$version`")`n`n$needle")
+            Set-Content -Path $path -Value $source
+          }
+          $packageName = "microsoft.ml.onnxruntime.$version.nupkg"
+          $baseUrl = "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/$version"
+          $archivePath = Join-Path $env:RUNNER_TEMP "onnxruntime.zip"
+          Invoke-WebRequest "$baseUrl/$packageName" -OutFile $archivePath
+          $expectedHash = "2X2D0DH6dEzWfath6I3uzItsPBGxqYlRsPz3OFK7S9Tfk10McWdKGegNjT8KmOAtkSno3yTF9eo43mDvn9salw=="
+          $actualHash = [Convert]::ToBase64String(
+            [Security.Cryptography.SHA512]::HashData([IO.File]::ReadAllBytes($archivePath))
+          )
+          if ($actualHash -ne $expectedHash) { throw "ONNX Runtime NuGet SHA-512 verification failed" }
+          $packageDir = Join-Path $env:RUNNER_TEMP "onnxruntime-nuget"
+          Expand-Archive -Path $archivePath -DestinationPath $packageDir -Force
+          $target = "build/windows/x64/plugins/flutter_onnxruntime/onnxruntime/onnxruntime-win-x64-$version"
+          New-Item -ItemType Directory -Force -Path "$target/include", "$target/lib" | Out-Null
+          Copy-Item "$packageDir/build/native/include/*" "$target/include/" -Force
+          Copy-Item "$packageDir/runtimes/win-x64/native/onnxruntime*" "$target/lib/" -Force
+          if (-not (Test-Path "$target/include/onnxruntime_cxx_api.h") -or `
+              -not (Test-Path "$target/lib/onnxruntime.lib") -or `
+              -not (Test-Path "$target/lib/onnxruntime.dll")) {
+            throw "NuGet package is missing required ONNX Runtime Windows files"
+          }
       - name: Generate SARISA Windows app icon
         run: |
           python -m pip install Pillow
@@ -114,10 +153,18 @@ jobs:
         run: flutter config --enable-windows-desktop
       - name: Flutter dependencies
         run: flutter pub get
+      - name: Flutter static analysis
+        run: flutter analyze --no-fatal-infos
       - name: Flutter tests
         run: flutter test
       - name: Build Windows release
         run: flutter build windows --release
+      - name: Ensure ONNX Runtime native DLLs are packaged
+        shell: pwsh
+        run: |
+          $native = Join-Path $env:RUNNER_TEMP "onnxruntime-nuget/runtimes/win-x64/native"
+          $release = "build/windows/x64/runner/Release"
+          Copy-Item "$native/onnxruntime.dll", "$native/onnxruntime_providers_shared.dll" $release -Force
       - name: Package Windows release
         shell: pwsh
         run: |
@@ -127,3 +174,18 @@ jobs:
           name: sarisa-windows-zip
           path: sarisa-windows.zip
           if-no-files-found: error
+  python-ai:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: native_ai/requirements-test.txt
+      - name: Install offline inference and test dependencies
+        run: python -m pip install -r native_ai/requirements-test.txt
+      - name: Fetch and verify offline YOLOX model
+        run: python native_ai/fetch_model.py
+      - name: Test ONNX inference and offline video pipeline
+        run: python -m unittest discover -s native_ai -p 'test_*.py' -v

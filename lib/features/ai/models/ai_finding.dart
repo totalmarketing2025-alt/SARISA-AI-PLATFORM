@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-enum DetectionCategory { person, vehicle, object, hazard }
+enum DetectionCategory { person, vehicle, animal, object, hazard }
 enum ReviewStatus { pending, verified, dismissed }
 
 class AiFinding {
@@ -58,7 +58,7 @@ class AiAnalysisSettings {
   final String mode;
   const AiAnalysisSettings({this.threshold = 0.75,
     this.enabled = const {DetectionCategory.person, DetectionCategory.vehicle,
-      DetectionCategory.object, DetectionCategory.hazard},
+      DetectionCategory.animal, DetectionCategory.object, DetectionCategory.hazard},
     this.mode = 'balanced'});
 
   bool accepts(AiFinding finding) =>
