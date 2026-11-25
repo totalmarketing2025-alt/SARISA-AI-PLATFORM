@@ -25,6 +25,9 @@ Do not claim that a stub, a mock test engine, or the external inference service 
 - `vehicle_visual_search.dart`: local cosine similarity and ranked candidate search over embeddings supplied by a future on-device vehicle model. It cannot extract embeddings from photographs yet.
 - `plate_ocr_validation.dart`: format normalization and confidence review gate for output from a future local OCR model. It does not detect or read plates from images yet.
 - `test/native_ai_components_test.dart`: deterministic unit tests for these components; CI outcome has not yet been verified.
+- `native_ai/test_offline_detector.py`: CI now creates a tiny synthetic ONNX graph and runs it through ONNX Runtime CPU, checking the YOLO-shaped output contract, category mapping, letterbox reversal, normalized boxes and confidence bounds. It does not stand in for a real licensed YOLO weight file or accuracy benchmark.
+- `native_ai/test_offline_video.py`: checks local frame sampling limits, offline event results and capture cleanup without shipping video or model data.
+- The combined Android/Windows workflow now runs `flutter analyze`, `flutter test`, both release builds, and the Python ONNX/video tests on pull requests and pushes to `main`.
 
 ### Required implementation sequence
 1. Select licensed detection, vehicle-embedding, plate-detector and OCR ONNX models; document provenance, accuracy, input/output tensors and hashes.

@@ -18,6 +18,7 @@ def analyze_video(model: Path, video: Path, every_seconds: float = 1.0,
         raise ValueError("Invalid sampling configuration")
     cap = cv2.VideoCapture(str(video))
     if not cap.isOpened():
+        cap.release()
         raise ValueError("Video codec unsupported")
     fps = cap.get(cv2.CAP_PROP_FPS)
     if fps <= 0 or fps > 1000:
