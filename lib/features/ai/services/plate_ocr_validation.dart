@@ -6,6 +6,8 @@ class PlateOcrCandidate {
   const PlateOcrCandidate(this.text, this.confidence);
 
   String get normalized => text.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+  /// OCR output always needs visual confirmation before SAR case use.
+  bool get operatorReviewRequired => true;
   bool get requiresReview => !confidence.isFinite ||
       confidence < 0.95 || normalized.length < 4 ||
       normalized.length > 12;
