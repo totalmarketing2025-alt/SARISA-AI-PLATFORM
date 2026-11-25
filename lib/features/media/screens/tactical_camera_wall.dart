@@ -9,6 +9,7 @@ import '../../ai/services/yolox_onnx_engine.dart';
 import '../../ai/services/plate_ocr_onnx_engine.dart';
 import '../../ai/services/vehicle_visual_search.dart';
 import '../../ai/services/plate_ocr_validation.dart';
+import '../../ai/services/anonymous_object_tracker.dart';
 
 const _bg = Color(0xFF09120F);
 const _surface = Color(0xFF15251C);
@@ -33,6 +34,8 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
   NativeAiStatus _ai = const NativeAiStatus(false, 'MODEL NOT LOADED');
   final _engine = YoloxOnnxEngine();
   final _plateOcr = PlateOcrOnnxEngine();
+  final _objectTracker = AnonymousObjectTracker();
+  List<TrackedDetection> _trackedDetections = const [];
   bool _ocrReady = false;
   bool _ocrBusy = false;
   String? _ocrStatus;
@@ -68,6 +71,10 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
       return;
     }
     if (_connecting) return;
+    if (switchLens) {
+      _objectTracker.reset();
+      _trackedDetections = const [];
+    }
     setState(() { _connecting = true; _cameraError = null; });
     try {
       _available = await availableCameras();
@@ -90,6 +97,8 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
   Future<void> _stopCamera() async {
     final previous = _camera;
     setState(() => _camera = null);
+    _objectTracker.reset();
+    setState(() => _trackedDetections = const []);
     await previous?.dispose();
   }
 
@@ -100,7 +109,7 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
     try {
       final photo = await camera.takePicture();
       final bytes = await photo.readAsBytes();
-      await _analyzeBytes(bytes);
+      await _analyzeBytes(bytes, trackCameraFrames: true);
     } catch (error) {
       if (mounted) setState(() => _cameraError = 'Offline model inference failed: $error');
     } finally {
@@ -127,10 +136,14 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
     }
   }
 
-  Future<void> _analyzeBytes(Uint8List bytes) async {
+  Future<void> _analyzeBytes(Uint8List bytes, {bool trackCameraFrames = false}) async {
     setState(() { _analysisBusy = true; _cameraError = null; });
     try {
       final detections = await _engine.detectJpeg(bytes);
+      final tracks = trackCameraFrames
+          ? _objectTracker.update(detections)
+          : <TrackedDetection>[];
+      if (!trackCameraFrames) _objectTracker.reset();
       final frameId = 'frame-${++_frameSequence}';
       final newCandidates = <VehicleVisualCandidate>[];
       for (var i = 0; i < detections.length; i++) {
@@ -145,7 +158,10 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
           _currentImage = bytes;
           _currentFrameId = frameId;
           _detections = detections;
+          _trackedDetections = tracks;
           _vehicleMatches = const [];
+          _plateCandidates = const [];
+          _ocrStatus = null;
           _vehicleCorpus.addAll(newCandidates);
           if (_vehicleCorpus.length > 500) {
             _vehicleCorpus.removeRange(0, _vehicleCorpus.length - 500);
@@ -155,6 +171,13 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
     } finally {
       if (mounted) setState(() => _analysisBusy = false);
     }
+  }
+
+  String? _trackIdFor(NativeDetection detection) {
+    for (final track in _trackedDetections) {
+      if (identical(track.detection, detection)) return track.trackId.toString();
+    }
+    return null;
   }
 
   void _searchSimilarVehicles() {
@@ -366,9 +389,12 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
               const SizedBox(height: 8),
               Text('LOCAL DETECTIONS: ${_detections.length}',
                   style: const TextStyle(color: _accent, fontWeight: FontWeight.bold)),
+              if (_trackedDetections.isNotEmpty)
+                const Text('TEMPORARY TRACK IDs apply only to vehicles, animals and objects across camera snapshots.',
+                    style: TextStyle(color: Colors.white70, fontSize: 11)),
               const SizedBox(height: 4),
               for (final detection in _detections.take(12))
-                Text('${detection.label} • ${(detection.confidence * 100).toStringAsFixed(1)}% • ${detection.category.name}',
+                Text('${_trackIdFor(detection) == null ? '' : 'T${_trackIdFor(detection)} • '}${detection.label} • ${(detection.confidence * 100).toStringAsFixed(1)}% • ${detection.category.name}',
                     style: const TextStyle(color: Colors.white70, fontSize: 12)),
               if (_detections.any((d) => d.category == DetectionCategory.vehicle)) ...[
                 const SizedBox(height: 8),
@@ -383,7 +409,7 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
                   Text('${match.frameId} • visual similarity ${(match.score * 100).toStringAsFixed(1)}% • operator review',
                       style: const TextStyle(color: Colors.white70, fontSize: 12)),
                 OutlinedButton.icon(
-                  onPressed: _ocrBusy ? null : _runPlateOcr,
+                  onPressed: _ocrBusy || _analysisBusy ? null : _runPlateOcr,
                   icon: _ocrBusy
                       ? const SizedBox(width: 15, height: 15,
                           child: CircularProgressIndicator(strokeWidth: 2))
