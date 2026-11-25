@@ -119,10 +119,8 @@ jobs:
           $packageName = "microsoft.ml.onnxruntime.$version.nupkg"
           $baseUrl = "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/$version"
           $archivePath = Join-Path $env:RUNNER_TEMP "onnxruntime.zip"
-          $hashPath = Join-Path $env:RUNNER_TEMP "$packageName.sha512"
           Invoke-WebRequest "$baseUrl/$packageName" -OutFile $archivePath
-          Invoke-WebRequest "$baseUrl/$packageName.sha512" -OutFile $hashPath
-          $expectedHash = (Get-Content $hashPath -Raw).Trim()
+          $expectedHash = "2X2D0DH6dEzWfath6I3uzItsPBGxqYlRsPz3OFK7S9Tfk10McWdKGegNjT8KmOAtkSno3yTF9eo43mDvn9salw=="
           $actualHash = [Convert]::ToBase64String(
             [Security.Cryptography.SHA512]::HashData([IO.File]::ReadAllBytes($archivePath))
           )
