@@ -24,6 +24,39 @@
       "license": "Apache-2.0; see LICENSE-YOLOX.txt",
       "sha256": "c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d",
       "bytes": 3659407
+    },
+    {
+      "id": "pp-ocrv5-mobile-detector",
+      "file": "ocr_det.onnx",
+      "family": "PaddleOCR PP-OCRv5 mobile text detector",
+      "format": "paddle-db-detector",
+      "source": "https://github.com/gitakoos/ocr-models/releases/download/v1/det.onnx",
+      "source_repository": "https://github.com/gitakoos/ocr-models",
+      "license": "Apache-2.0; see LICENSE-PPOCR.txt and NOTICE-PPOCR.txt",
+      "sha256": "d7fe3ea74652890722c0f4d02458b7261d9f5ae6c92904d05707c9eb155c7924",
+      "bytes": 4748769
+    },
+    {
+      "id": "pp-ocrv5-latin-recognizer",
+      "file": "ocr_rec_latin.onnx",
+      "family": "PaddleOCR PP-OCRv5 Latin mobile recognizer",
+      "format": "paddle-ctc-latin-838",
+      "source": "https://github.com/gitakoos/ocr-models/releases/download/v1/rec_latin.onnx",
+      "source_repository": "https://github.com/gitakoos/ocr-models",
+      "license": "Apache-2.0; see LICENSE-PPOCR.txt and NOTICE-PPOCR.txt",
+      "sha256": "995b0f5f28d2073896a78c03b5b863eae6af3744bafa0245b8522beea6994927",
+      "bytes": 8064539
+    },
+    {
+      "id": "pp-ocrv5-latin-dictionary",
+      "file": "ppocrv5_latin_dict.txt",
+      "family": "PaddleOCR PP-OCRv5 Latin dictionary",
+      "format": "ctc-character-list",
+      "source": "https://github.com/gitakoos/ocr-models/releases/download/v1/ppocrv5_latin_dict.txt",
+      "source_repository": "https://github.com/gitakoos/ocr-models",
+      "license": "Apache-2.0; see LICENSE-PPOCR.txt and NOTICE-PPOCR.txt",
+      "sha256": "ccbcc45730b3fbbd9050c5bc74db6a99067141ef1035e3d14889a84a6b9b1aff",
+      "bytes": 2616
     }
   ]
 }
