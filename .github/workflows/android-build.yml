@@ -10,6 +10,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Fetch and verify pinned ONNX model assets
+        run: python3 native_ai/fetch_model.py
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
