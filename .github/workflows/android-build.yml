@@ -21,16 +21,16 @@ jobs:
 
       - run: flutter create --platforms=android,windows .
 
-      - name: Configure Android internet and foreground location permissions
+      - name: Configure Android SAR runtime permissions
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
           manifest = Path("android/app/src/main/AndroidManifest.xml")
           content = manifest.read_text()
 
           permissions = [
+              "android.permission.CAMERA",
               "android.permission.INTERNET",
               "android.permission.ACCESS_COARSE_LOCATION",
               "android.permission.ACCESS_FINE_LOCATION",
@@ -44,7 +44,7 @@ jobs:
                       raise SystemExit("ERROR: Android application tag not found")
                   content = content.replace(
                       marker,
-                      tag + "\n    " + marker,
+                      "    " + tag + "\n    " + marker,
                       1,
                   )
 
@@ -52,7 +52,7 @@ jobs:
               raise SystemExit("ERROR: Android application tag not found")
 
           manifest.write_text(content)
-          print("Android internet and foreground GPS permissions configured.")
+          print("Android camera, internet and foreground GPS permissions configured.")
           PY
 
       - run: flutter pub get

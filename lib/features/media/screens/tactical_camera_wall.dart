@@ -11,6 +11,7 @@ import '../../ai/services/plate_ocr_onnx_engine.dart';
 import '../../ai/services/vehicle_visual_search.dart';
 import '../../ai/services/plate_ocr_validation.dart';
 import '../../ai/services/anonymous_object_tracker.dart';
+import '../../ai/services/rescue_snapshot_assessment.dart';
 
 const _bg = Color(0xFF09120F);
 const _surface = Color(0xFF15251C);
@@ -42,6 +43,8 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
   String? _ocrStatus;
   List<PlateOcrCandidate> _plateCandidates = const [];
   List<NativeDetection> _detections = const [];
+  RescueSnapshotAssessment? _rescueAssessment;
+  final Map<int, RescueOperatorAssessment> _operatorAssessments = {};
   Uint8List? _currentImage;
   int _frameSequence = 0;
   String? _currentFrameId;
@@ -141,6 +144,7 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
     setState(() { _analysisBusy = true; _cameraError = null; });
     try {
       final detections = await _engine.detectJpeg(bytes);
+      final rescueAssessment = RescueSnapshotAssessment.fromDetections(detections);
       final tracks = trackCameraFrames
           ? _objectTracker.update(detections)
           : <TrackedDetection>[];
@@ -161,6 +165,8 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
           _currentImage = bytes;
           _currentFrameId = frameId;
           _detections = detections;
+          _rescueAssessment = rescueAssessment;
+          _operatorAssessments.clear();
           _trackedDetections = tracks;
           _vehicleMatches = const [];
           _plateCandidates = const [];
@@ -341,6 +347,63 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
     );
   }
 
+  Widget _rescueReviewCard(RescueSnapshotAssessment assessment) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: const Color(0xFF101C16),
+      border: Border.all(color: _line),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('SAR PERSON CHECK',
+          style: TextStyle(color: _accent, fontWeight: FontWeight.bold)),
+      const SizedBox(height: 5),
+      Text('People detected in this snapshot: ${assessment.peopleCount}',
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+      if (assessment.possibleHorizontalPostureCount > 0)
+        Padding(
+          padding: const EdgeInsets.only(top: 5),
+          child: Text('Visual cue: ${assessment.possibleHorizontalPostureCount} person box(es) have a wide/horizontal shape. Verify posture and condition in the image; this is not an injury diagnosis.',
+              style: const TextStyle(color: _amber, fontSize: 12)),
+        )
+      else
+        const Padding(
+          padding: EdgeInsets.only(top: 5),
+          child: Text('No wide/horizontal posture cue. The model cannot determine injury or whether someone is asking for help.',
+              style: TextStyle(color: Colors.white70, fontSize: 12)),
+        ),
+      for (final person in assessment.people) ...[
+        const SizedBox(height: 6),
+        Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          Expanded(child: Text(
+            'Person ${person.frameIndex} • ${(person.confidence * 100).toStringAsFixed(0)}%${person.possibleHorizontalPosture ? ' • posture cue' : ''}',
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          )),
+          const SizedBox(width: 8),
+          Flexible(child: DropdownButton<RescueOperatorAssessment>(
+            value: _operatorAssessments[person.frameIndex] ?? RescueOperatorAssessment.unreviewed,
+            isExpanded: true,
+            dropdownColor: _surface,
+            style: const TextStyle(color: Colors.white, fontSize: 11),
+            items: [
+              for (final option in RescueOperatorAssessment.values)
+                DropdownMenuItem(value: option,
+                  child: Text(option.label, overflow: TextOverflow.ellipsis)),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() => _operatorAssessments[person.frameIndex] = value);
+            },
+          )),
+        ]),
+      ],
+      const SizedBox(height: 5),
+      const Text('Person numbers are temporary for this image. Injury/help selections are operator assessments and are not saved as diagnoses.',
+          style: TextStyle(color: Colors.white54, fontSize: 10)),
+    ]),
+  );
+
   @override
   Widget build(BuildContext context) => Container(color: _bg, child: LayoutBuilder(
     builder: (context, constraints) {
@@ -352,6 +415,9 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
         const SizedBox(height: 6),
         const Text('Four feeds • local Android camera test • operator-authorized HTTPS streams',
             style: TextStyle(color: Colors.white70, fontSize: 12)),
+        const SizedBox(height: 4),
+        const Text('PHONE → WINDOWS: no direct camera link is configured. Windows feeds require an external HTTPS streaming gateway.',
+            style: TextStyle(color: _amber, fontSize: 11)),
         const SizedBox(height: 12),
         Wrap(spacing: 10, runSpacing: 8, children: [
           Chip(label: Text('CAMERAS: ${(_camera?.value.isInitialized ?? false ? 1 : 0) + _players.length}/4')),
@@ -388,6 +454,10 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
               icon: const Icon(Icons.image_search_outlined),
               label: const Text('PICK IMAGE AND ANALYZE OFFLINE'),
             ),
+            if (_rescueAssessment != null) ...[
+              const SizedBox(height: 12),
+              _rescueReviewCard(_rescueAssessment!),
+            ],
             if (_detections.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text('LOCAL DETECTIONS: ${_detections.length}',
