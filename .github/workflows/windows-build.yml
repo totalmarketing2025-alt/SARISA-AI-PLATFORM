@@ -14,10 +14,48 @@ jobs:
         with:
           channel: stable
       - run: flutter create --platforms=android,windows .
+      - name: Prepare verified Windows ONNX Runtime from NuGet
+        shell: pwsh
+        run: |
+          $path = "windows/CMakeLists.txt"
+          $source = Get-Content $path -Raw
+          $needle = "include(flutter/generated_plugins.cmake)"
+          $version = "1.28.0"
+          if ($source -notmatch 'set\(ONNXRUNTIME_VERSION') {
+            if (-not $source.Contains($needle)) { throw "Could not find generated plugin include in $path" }
+            $source = $source.Replace($needle, "set(ONNXRUNTIME_VERSION `"$version`")`n`n$needle")
+            Set-Content -Path $path -Value $source
+          }
+          $packageName = "microsoft.ml.onnxruntime.$version.nupkg"
+          $baseUrl = "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/$version"
+          $archivePath = Join-Path $env:RUNNER_TEMP "onnxruntime.zip"
+          Invoke-WebRequest "$baseUrl/$packageName" -OutFile $archivePath
+          $expectedHash = "2X2D0DH6dEzWfath6I3uzItsPBGxqYlRsPz3OFK7S9Tfk10McWdKGegNjT8KmOAtkSno3yTF9eo43mDvn9salw=="
+          $actualHash = [Convert]::ToBase64String(
+            [Security.Cryptography.SHA512]::HashData([IO.File]::ReadAllBytes($archivePath))
+          )
+          if ($actualHash -ne $expectedHash) { throw "ONNX Runtime NuGet SHA-512 verification failed" }
+          $packageDir = Join-Path $env:RUNNER_TEMP "onnxruntime-nuget"
+          Expand-Archive -Path $archivePath -DestinationPath $packageDir -Force
+          $target = "build/windows/x64/plugins/flutter_onnxruntime/onnxruntime/onnxruntime-win-x64-$version"
+          New-Item -ItemType Directory -Force -Path "$target/include", "$target/lib" | Out-Null
+          Copy-Item "$packageDir/build/native/include/*" "$target/include/" -Force
+          Copy-Item "$packageDir/runtimes/win-x64/native/onnxruntime*" "$target/lib/" -Force
+          if (-not (Test-Path "$target/include/onnxruntime_cxx_api.h") -or `
+              -not (Test-Path "$target/lib/onnxruntime.lib") -or `
+              -not (Test-Path "$target/lib/onnxruntime.dll")) {
+            throw "NuGet package is missing required ONNX Runtime Windows files"
+          }
       - run: flutter pub get
       - run: flutter analyze --no-fatal-infos
       - run: flutter test
       - run: flutter build windows --release
+      - name: Ensure ONNX Runtime native DLLs are packaged
+        shell: pwsh
+        run: |
+          $native = Join-Path $env:RUNNER_TEMP "onnxruntime-nuget/runtimes/win-x64/native"
+          $release = "build/windows/x64/runner/Release"
+          Copy-Item "$native/onnxruntime.dll", "$native/onnxruntime_providers_shared.dll" $release -Force
       - uses: actions/upload-artifact@v4
         with:
           name: sarisa-windows
