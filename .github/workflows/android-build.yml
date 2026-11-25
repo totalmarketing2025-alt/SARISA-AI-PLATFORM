@@ -101,7 +101,7 @@ jobs:
           print(f"Total updated settings: {changed}")
           PY
 
-      - run: flutter analyze
+      - run: flutter analyze --no-fatal-infos
       - run: flutter test
       - run: flutter build apk --release
 

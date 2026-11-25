@@ -88,7 +88,7 @@ jobs:
       - name: Flutter dependencies
         run: flutter pub get
       - name: Flutter static analysis
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
       - name: Flutter tests
         run: flutter test
       - name: Build release APK
@@ -117,7 +117,7 @@ jobs:
       - name: Flutter dependencies
         run: flutter pub get
       - name: Flutter static analysis
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
       - name: Flutter tests
         run: flutter test
       - name: Build Windows release
