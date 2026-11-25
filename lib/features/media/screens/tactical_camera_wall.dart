@@ -29,6 +29,7 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
   NativeAiStatus _ai = const NativeAiStatus(false, 'MODEL NOT LOADED');
   final _engine = YoloxOnnxEngine();
   List<NativeDetection> _detections = const [];
+  bool _modelLoading = false;
   bool _analysisBusy = false;
   final _urls = List.generate(3, (_) => TextEditingController());
   final _players = <int, VideoPlayerController>{};
@@ -38,12 +39,13 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
   @override
   void initState() {
     super.initState();
-    _checkAi();
   }
 
-  Future<void> _checkAi() async {
+  Future<void> _loadAi() async {
+    if (_ai.ready || _modelLoading) return;
+    setState(() => _modelLoading = true);
     final status = await _engine.initialize();
-    if (mounted) setState(() => _ai = status);
+    if (mounted) setState(() { _ai = status; _modelLoading = false; });
   }
 
   Future<void> _startCamera({bool switchLens = false}) async {
@@ -240,7 +242,14 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
             const SizedBox(height: 8),
             Text(_ai.message, style: const TextStyle(color: _amber)),
             const SizedBox(height: 8),
-            FilledButton.icon(onPressed: _camera?.value.isInitialized == true && !_analysisBusy
+            if (!_ai.ready) FilledButton.tonalIcon(
+              onPressed: _modelLoading ? null : _loadAi,
+              icon: _modelLoading
+                  ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.memory),
+              label: Text(_modelLoading ? 'LOADING LOCAL MODEL' : 'LOAD OFFLINE YOLOX MODEL'),
+            ),
+            FilledButton.icon(onPressed: _ai.ready && _camera?.value.isInitialized == true && !_analysisBusy
                 ? _analyzeSnapshot : null,
                 icon: const Icon(Icons.play_arrow), label: const Text('ANALYZE LOCAL SNAPSHOT')),
             if (Platform.isWindows) ...[
