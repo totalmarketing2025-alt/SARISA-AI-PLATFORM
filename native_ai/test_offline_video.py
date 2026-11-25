@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from offline_video import analyze_video
+from offline_video import AnonymousObjectTracker, analyze_video
 
 
 class FakeCapture:
@@ -34,6 +34,36 @@ class FakeCapture:
 
 
 class OfflineVideoTest(unittest.TestCase):
+    def test_tracker_associates_objects_but_never_people(self):
+        tracker = AnonymousObjectTracker()
+        def detection(category, label, x):
+            return {"category": category, "label": label,
+                    "box": [x, 0.2, 0.2, 0.2], "confidence": 0.9}
+
+        first = tracker.update([
+            detection("person", "person", 0.1),
+            detection("vehicle", "car", 0.3),
+        ])
+        second = tracker.update([
+            detection("person", "person", 0.12),
+            detection("vehicle", "car", 0.32),
+        ])
+        self.assertEqual(len(first), 1)
+        self.assertEqual(len(second), 1)
+        self.assertEqual(first[0]["track_id"], second[0]["track_id"])
+        self.assertEqual(first[0]["category"], "vehicle")
+
+    def test_tracker_drops_expired_tracks_and_rejects_bad_settings(self):
+        tracker = AnonymousObjectTracker(max_missed_frames=0)
+        detection = {"category": "object", "label": "backpack",
+                     "box": [0.2, 0.2, 0.2, 0.2]}
+        first = tracker.update([detection])[0]["track_id"]
+        tracker.update([])
+        second = tracker.update([detection])[0]["track_id"]
+        self.assertNotEqual(first, second)
+        with self.assertRaises(ValueError):
+            AnonymousObjectTracker(iou_threshold=0)
+
     def test_sampling_interval_and_frame_limit_are_enforced(self):
         with tempfile.TemporaryDirectory() as directory:
             video = Path(directory) / "authorized-local-video.mp4"
@@ -51,6 +81,7 @@ class OfflineVideoTest(unittest.TestCase):
         self.assertEqual([item["time_seconds"] for item in results],
                          [0.0, 0.2, 0.4])
         self.assertTrue(all(item["offline"] for item in results))
+        self.assertTrue(all("tracks" in item for item in results))
         self.assertEqual(inference.call_count, 3)
         self.assertTrue(capture.released)
 
