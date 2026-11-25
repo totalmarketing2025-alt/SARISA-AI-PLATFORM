@@ -32,3 +32,6 @@ flutter:
   uses-material-design: true
   assets:
     - assets/models/yolox_nano.onnx
+    - assets/models/ocr_det.onnx
+    - assets/models/ocr_rec_latin.onnx
+    - assets/models/ppocrv5_latin_dict.txt
