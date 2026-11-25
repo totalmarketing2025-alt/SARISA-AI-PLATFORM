@@ -44,46 +44,34 @@ jobs:
         run: |
           yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36"
-      - name: Set compileSdk 36 for generated Android and plugin modules
+      - name: Set compileSdk 36 for Android and cached Flutter plugins
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          app = Path("android/app/build.gradle.kts")
-          if not app.exists():
-              app = Path("android/app/build.gradle")
-          if not app.exists():
-              raise SystemExit("Generated Android app Gradle file missing")
-          source = app.read_text()
           import re
-          source, count = re.subn(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 36', source)
-          if count == 0:
-              source, count = re.subn(r'compileSdkVersion\s+flutter\.compileSdkVersion', 'compileSdkVersion 36', source)
-          if count == 0:
-              raise SystemExit("Unable to locate app compileSdk setting")
-          app.write_text(source)
-          root = Path("android/build.gradle.kts")
-          if root.exists():
-              root.write_text(root.read_text() + """
-          subprojects {
-              plugins.withId("com.android.library") {
-                  extensions.configure<com.android.build.gradle.LibraryExtension> {
-                      compileSdk = 36
-                  }
-              }
-          }
-          """)
-          else:
-              root = Path("android/build.gradle")
+          roots = [Path("android"), Path.home() / ".pub-cache/hosted/pub.dev"]
+          pattern = re.compile(
+              r'(?m)^(\s*compileSdk(?:Version)?\s*(?:=\s*)?)'
+              r'(?:flutter\.compileSdkVersion|\d+)(\s*(?://.*)?)$'
+          )
+          changed = 0
+          for root in roots:
               if not root.exists():
-                  raise SystemExit("Android root Gradle file missing")
-              root.write_text(root.read_text() + """
-          subprojects { subproject ->
-              subproject.plugins.withId('com.android.library') {
-                  subproject.android.compileSdkVersion 36
-              }
-          }
-          """)
-          print("Android app and library modules configured for compileSdk 36")
+                  continue
+              for gradle_file in root.rglob("build.gradle*"):
+                  if gradle_file.name not in ("build.gradle", "build.gradle.kts"):
+                      continue
+                  source = gradle_file.read_text()
+                  updated, count = pattern.subn(
+                      lambda match: match.group(1) + "36" + match.group(2), source
+                  )
+                  if count:
+                      gradle_file.write_text(updated)
+                      changed += count
+                      print(f"Configured compileSdk 36: {gradle_file}")
+          if changed == 0:
+              raise SystemExit("No Android compileSdk settings were found to update")
+          print(f"Updated {changed} Android compileSdk settings")
           PY
       - name: Flutter dependencies
         run: flutter pub get
