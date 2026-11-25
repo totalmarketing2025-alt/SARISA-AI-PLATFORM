@@ -33,4 +33,18 @@ const approvedNativeModels = <NativeModelArtifact>[
     licenseId: 'Apache-2.0',
     version: 'YOLOX-Nano COCO-80 0.1.1rc0',
   ),
+  NativeModelArtifact(
+    role: NativeModelRole.plateDetection,
+    filename: 'ocr_det.onnx',
+    sha256: 'd7fe3ea74652890722c0f4d02458b7261d9f5ae6c92904d05707c9eb155c7924',
+    licenseId: 'Apache-2.0',
+    version: 'PP-OCRv5 mobile text detector v1',
+  ),
+  NativeModelArtifact(
+    role: NativeModelRole.plateOcr,
+    filename: 'ocr_rec_latin.onnx',
+    sha256: '995b0f5f28d2073896a78c03b5b863eae6af3744bafa0245b8522beea6994927',
+    licenseId: 'Apache-2.0',
+    version: 'PP-OCRv5 Latin mobile recognizer v1',
+  ),
 ];
