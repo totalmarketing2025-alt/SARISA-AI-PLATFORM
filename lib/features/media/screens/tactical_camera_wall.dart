@@ -1,10 +1,14 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import '../../ai/services/native_ai_engine.dart';
 import '../../ai/services/yolox_onnx_engine.dart';
+import '../../ai/services/plate_ocr_onnx_engine.dart';
+import '../../ai/services/vehicle_visual_search.dart';
+import '../../ai/services/plate_ocr_validation.dart';
 
 const _bg = Color(0xFF09120F);
 const _surface = Color(0xFF15251C);
@@ -28,7 +32,17 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
   String? _cameraError;
   NativeAiStatus _ai = const NativeAiStatus(false, 'MODEL NOT LOADED');
   final _engine = YoloxOnnxEngine();
+  final _plateOcr = PlateOcrOnnxEngine();
+  bool _ocrReady = false;
+  bool _ocrBusy = false;
+  String? _ocrStatus;
+  List<PlateOcrCandidate> _plateCandidates = const [];
   List<NativeDetection> _detections = const [];
+  Uint8List? _currentImage;
+  int _frameSequence = 0;
+  String? _currentFrameId;
+  final List<VehicleVisualCandidate> _vehicleCorpus = [];
+  List<({String frameId, double score})> _vehicleMatches = const [];
   bool _modelLoading = false;
   bool _analysisBusy = false;
   final _urls = List.generate(3, (_) => TextEditingController());
@@ -85,8 +99,8 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
     setState(() { _analysisBusy = true; _cameraError = null; });
     try {
       final photo = await camera.takePicture();
-      final detections = await _engine.detectJpeg(await photo.readAsBytes());
-      if (mounted) setState(() => _detections = detections);
+      final bytes = await photo.readAsBytes();
+      await _analyzeBytes(bytes);
     } catch (error) {
       if (mounted) setState(() => _cameraError = 'Offline model inference failed: $error');
     } finally {
@@ -105,13 +119,102 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
       final file = selection.files.single;
       final bytes = file.bytes ?? (file.path == null ? null : await File(file.path!).readAsBytes());
       if (bytes == null) throw StateError('Could not read the selected image.');
-      setState(() { _analysisBusy = true; _cameraError = null; });
-      final detections = await _engine.detectJpeg(bytes);
-      if (mounted) setState(() => _detections = detections);
+      await _analyzeBytes(bytes);
     } catch (error) {
       if (mounted) setState(() => _cameraError = 'Offline model inference failed: $error');
     } finally {
       if (mounted) setState(() => _analysisBusy = false);
+    }
+  }
+
+  Future<void> _analyzeBytes(Uint8List bytes) async {
+    setState(() { _analysisBusy = true; _cameraError = null; });
+    try {
+      final detections = await _engine.detectJpeg(bytes);
+      final frameId = 'frame-${++_frameSequence}';
+      final newCandidates = <VehicleVisualCandidate>[];
+      for (var i = 0; i < detections.length; i++) {
+        final detection = detections[i];
+        if (detection.category != DetectionCategory.vehicle) continue;
+        newCandidates.add(VehicleVisualCandidate('$frameId-vehicle-$i',
+          VehicleVisualSearch.describeJpeg(bytes, x: detection.x, y: detection.y,
+            width: detection.width, height: detection.height)));
+      }
+      if (mounted) {
+        setState(() {
+          _currentImage = bytes;
+          _currentFrameId = frameId;
+          _detections = detections;
+          _vehicleMatches = const [];
+          _vehicleCorpus.addAll(newCandidates);
+          if (_vehicleCorpus.length > 500) {
+            _vehicleCorpus.removeRange(0, _vehicleCorpus.length - 500);
+          }
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _analysisBusy = false);
+    }
+  }
+
+  void _searchSimilarVehicles() {
+    final bytes = _currentImage;
+    if (bytes == null || _currentFrameId == null) return;
+    try {
+      final query = <List<double>>[];
+      for (final detection in _detections) {
+        if (detection.category == DetectionCategory.vehicle) {
+          query.add(VehicleVisualSearch.describeJpeg(bytes, x: detection.x,
+            y: detection.y, width: detection.width, height: detection.height));
+        }
+      }
+      if (query.isEmpty) {
+        setState(() => _cameraError = 'No vehicle crop in the selected image.');
+        return;
+      }
+      final candidates = _vehicleCorpus.where((item) =>
+        !item.localFrameId.startsWith('$_currentFrameId-')).toList();
+      final ranked = <({String frameId, double score})>[];
+      for (final vector in query) {
+        ranked.addAll(VehicleVisualSearch.rank(vector, candidates, limit: 20));
+      }
+      final bestByFrame = <String, double>{};
+      for (final match in ranked) {
+        if (match.score < 0) continue;
+        final previous = bestByFrame[match.frameId];
+        if (previous == null || match.score > previous) bestByFrame[match.frameId] = match.score;
+      }
+      final results = bestByFrame.entries.map((entry) =>
+        (frameId: entry.key, score: entry.value)).toList()
+        ..sort((a, b) => b.score.compareTo(a.score));
+      setState(() {
+        _vehicleMatches = results.take(10).toList();
+        _cameraError = null;
+      });
+    } catch (error) {
+      setState(() => _cameraError = 'Vehicle appearance search failed: $error');
+    }
+  }
+
+  Future<void> _runPlateOcr() async {
+    final bytes = _currentImage;
+    if (bytes == null || _ocrBusy) return;
+    setState(() { _ocrBusy = true; _ocrStatus = 'LOADING LOCAL OCR'; });
+    try {
+      if (!_ocrReady) {
+        final status = await _plateOcr.initialize();
+        if (!status.ready) throw StateError(status.message);
+        _ocrReady = true;
+      }
+      final candidates = await _plateOcr.readVehicleText(bytes, _detections);
+      if (mounted) setState(() {
+        _plateCandidates = candidates;
+        _ocrStatus = candidates.isEmpty ? 'NO PLATE-SHAPED TEXT FOUND' : null;
+      });
+    } catch (error) {
+      if (mounted) setState(() => _ocrStatus = 'LOCAL OCR FAILED: $error');
+    } finally {
+      if (mounted) setState(() => _ocrBusy = false);
     }
   }
 
@@ -148,6 +251,7 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
     for (final p in _players.values) { p.dispose(); }
     for (final c in _urls) { c.dispose(); }
     _engine.dispose();
+    _plateOcr.dispose();
     super.dispose();
   }
 
@@ -252,14 +356,12 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
             FilledButton.icon(onPressed: _ai.ready && _camera?.value.isInitialized == true && !_analysisBusy
                 ? _analyzeSnapshot : null,
                 icon: const Icon(Icons.play_arrow), label: const Text('ANALYZE LOCAL SNAPSHOT')),
-            if (Platform.isWindows) ...[
-              const SizedBox(height: 6),
-              OutlinedButton.icon(
-                onPressed: _ai.ready && !_analysisBusy ? _analyzeLocalImage : null,
-                icon: const Icon(Icons.image_search_outlined),
-                label: const Text('PICK IMAGE AND ANALYZE OFFLINE'),
-              ),
-            ],
+            const SizedBox(height: 6),
+            OutlinedButton.icon(
+              onPressed: _ai.ready && !_analysisBusy ? _analyzeLocalImage : null,
+              icon: const Icon(Icons.image_search_outlined),
+              label: const Text('PICK IMAGE AND ANALYZE OFFLINE'),
+            ),
             if (_detections.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text('LOCAL DETECTIONS: ${_detections.length}',
@@ -268,6 +370,35 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
               for (final detection in _detections.take(12))
                 Text('${detection.label} • ${(detection.confidence * 100).toStringAsFixed(1)}% • ${detection.category.name}',
                     style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              if (_detections.any((d) => d.category == DetectionCategory.vehicle)) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _vehicleCorpus.length > 1 ? _searchSimilarVehicles : null,
+                  icon: const Icon(Icons.manage_search),
+                  label: const Text('SEARCH SIMILAR VEHICLES IN THIS SESSION'),
+                ),
+                const Text('Ranks visual candidates from local session frames. Similarity is not vehicle identity.',
+                    style: TextStyle(color: Colors.white70, fontSize: 11)),
+                for (final match in _vehicleMatches.take(5))
+                  Text('${match.frameId} • visual similarity ${(match.score * 100).toStringAsFixed(1)}% • operator review',
+                      style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                OutlinedButton.icon(
+                  onPressed: _ocrBusy ? null : _runPlateOcr,
+                  icon: _ocrBusy
+                      ? const SizedBox(width: 15, height: 15,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.document_scanner_outlined),
+                  label: Text(_ocrBusy ? 'READING LOCAL PLATE TEXT' : 'READ PLATE TEXT OFFLINE'),
+                ),
+                if (_ocrStatus != null) Text(_ocrStatus!,
+                  style: const TextStyle(color: _amber, fontSize: 11)),
+                for (final candidate in _plateCandidates)
+                  Text('${candidate.normalized} • ${(candidate.confidence * 100).toStringAsFixed(1)}% • VERIFY VISUALLY',
+                    style: const TextStyle(color: _amber, fontSize: 12)),
+                if (_plateCandidates.isNotEmpty)
+                  const Text('Suggestions are temporary and unconfirmed. No owner or registry lookup is performed.',
+                    style: TextStyle(color: Colors.white70, fontSize: 11)),
+              ],
             ] else if (!_analysisBusy && _ai.ready) ...[
               const SizedBox(height: 5),
               const Text('No local detections yet. Capture a snapshot to run the offline model.',
