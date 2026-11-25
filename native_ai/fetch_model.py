@@ -13,8 +13,9 @@ def fetch():
     entries = json.loads(MANIFEST.read_text(encoding="utf-8"))["models"]
     for artifact in entries:
         filename = artifact["file"]
-        if Path(filename).name != filename or not filename.endswith(".onnx"):
-            raise ValueError("Unsafe model filename in manifest")
+        if (Path(filename).name != filename or
+                Path(filename).suffix.lower() not in {".onnx", ".txt"}):
+            raise ValueError("Unsafe model/dictionary filename in manifest")
         target = MANIFEST.parent / filename
         expected_sha = artifact["sha256"].lower()
         if target.is_file():
