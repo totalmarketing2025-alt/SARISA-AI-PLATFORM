@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch and verify offline YOLOX model
+        run: python3 native_ai/fetch_model.py
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -23,6 +25,10 @@ jobs:
           cache: true
       - name: Generate missing android platform project
         run: flutter create --platforms=android --project-name sarisa .
+      - name: Configure ONNX Runtime Android keep rules
+        run: |
+          mkdir -p android/app
+          printf '%s\n' '-keep class ai.onnxruntime.** { *; }' > android/app/proguard-rules.pro
       - name: Generate SARISA Android app icon
         run: |
           python3 -m pip install Pillow
@@ -44,6 +50,8 @@ jobs:
         run: |
           yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36"
+      - name: Flutter dependencies
+        run: flutter pub get
       - name: Set compileSdk 36 for Android and cached Flutter plugins
         run: |
           python3 - <<'PY'
@@ -73,8 +81,6 @@ jobs:
               raise SystemExit("No Android compileSdk settings were found to update")
           print(f"Updated {changed} Android compileSdk settings")
           PY
-      - name: Flutter dependencies
-        run: flutter pub get
       - name: Flutter static analysis
         run: flutter analyze --no-fatal-infos
       - name: Flutter tests
@@ -90,12 +96,25 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch and verify offline YOLOX model
+        run: python native_ai/fetch_model.py
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
       - name: Generate missing Windows platform project
         run: flutter create --platforms=windows --project-name sarisa .
+      - name: Pin Windows ONNX Runtime download
+        shell: pwsh
+        run: |
+          $path = "windows/CMakeLists.txt"
+          $source = Get-Content $path -Raw
+          $needle = "include(flutter/generated_plugins.cmake)"
+          if ($source -notmatch 'set\(ONNXRUNTIME_VERSION') {
+            if (-not $source.Contains($needle)) { throw "Could not find generated plugin include in $path" }
+            $source = $source.Replace($needle, "set(ONNXRUNTIME_VERSION `"1.22.0`")`n`n$needle")
+            Set-Content -Path $path -Value $source
+          }
       - name: Generate SARISA Windows app icon
         run: |
           python -m pip install Pillow
@@ -130,5 +149,7 @@ jobs:
           cache-dependency-path: native_ai/requirements-test.txt
       - name: Install offline inference and test dependencies
         run: python -m pip install -r native_ai/requirements-test.txt
+      - name: Fetch and verify offline YOLOX model
+        run: python native_ai/fetch_model.py
       - name: Test ONNX inference and offline video pipeline
         run: python -m unittest discover -s native_ai -p 'test_*.py' -v

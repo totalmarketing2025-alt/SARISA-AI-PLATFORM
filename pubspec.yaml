@@ -20,6 +20,8 @@ dependencies:
   geolocator: 14.0.2
   latlong2: ^0.9.1
   object_detection: ^1.1.1
+  flutter_onnxruntime: ^1.9.1
+  image: ^4.5.4
 
 dev_dependencies:
   flutter_test:
@@ -28,3 +30,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/models/yolox_nano.onnx

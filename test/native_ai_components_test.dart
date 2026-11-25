@@ -4,8 +4,12 @@ import 'package:sarisa/features/ai/services/vehicle_visual_search.dart';
 import 'package:sarisa/features/ai/services/plate_ocr_validation.dart';
 
 void main() {
-  test('no unapproved model is bundled', () {
-    expect(approvedNativeModels, isEmpty);
+  test('the bundled YOLOX model has pinned license and digest metadata', () {
+    expect(approvedNativeModels, hasLength(1));
+    expect(approvedNativeModels.single.filename, 'yolox_nano.onnx');
+    expect(approvedNativeModels.single.licenseId, 'Apache-2.0');
+    expect(approvedNativeModels.single.hasMetadata, true);
+    expect(approvedNativeModels.single.hasValidDigest, true);
     const model = NativeModelArtifact(role: NativeModelRole.objectDetection,
       filename: 'model.onnx', sha256: 'invalid', licenseId: 'review',
       version: '1');

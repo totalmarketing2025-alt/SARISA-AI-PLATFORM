@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'package:camera/camera.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import '../../ai/services/native_ai_engine.dart';
+import '../../ai/services/yolox_onnx_engine.dart';
 
 const _bg = Color(0xFF09120F);
 const _surface = Color(0xFF15251C);
@@ -25,7 +27,9 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
   bool _connecting = false;
   String? _cameraError;
   NativeAiStatus _ai = const NativeAiStatus(false, 'MODEL NOT LOADED');
-  final _engine = const UnavailableNativeAiEngine();
+  final _engine = YoloxOnnxEngine();
+  List<NativeDetection> _detections = const [];
+  bool _analysisBusy = false;
   final _urls = List.generate(3, (_) => TextEditingController());
   final _players = <int, VideoPlayerController>{};
   final _errors = <int, String>{};
@@ -71,6 +75,42 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
     final previous = _camera;
     setState(() => _camera = null);
     await previous?.dispose();
+  }
+
+  Future<void> _analyzeSnapshot() async {
+    final camera = _camera;
+    if (camera == null || !camera.value.isInitialized || !_ai.ready || _analysisBusy) return;
+    setState(() { _analysisBusy = true; _cameraError = null; });
+    try {
+      final photo = await camera.takePicture();
+      final detections = await _engine.detectJpeg(await photo.readAsBytes());
+      if (mounted) setState(() => _detections = detections);
+    } catch (error) {
+      if (mounted) setState(() => _cameraError = 'Offline model inference failed: $error');
+    } finally {
+      if (mounted) setState(() => _analysisBusy = false);
+    }
+  }
+
+  Future<void> _analyzeLocalImage() async {
+    if (!_ai.ready || _analysisBusy) return;
+    try {
+      final selection = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        withData: true,
+      );
+      if (selection == null || selection.files.isEmpty) return;
+      final file = selection.files.single;
+      final bytes = file.bytes ?? (file.path == null ? null : await File(file.path!).readAsBytes());
+      if (bytes == null) throw StateError('Could not read the selected image.');
+      setState(() { _analysisBusy = true; _cameraError = null; });
+      final detections = await _engine.detectJpeg(bytes);
+      if (mounted) setState(() => _detections = detections);
+    } catch (error) {
+      if (mounted) setState(() => _cameraError = 'Offline model inference failed: $error');
+    } finally {
+      if (mounted) setState(() => _analysisBusy = false);
+    }
   }
 
   Future<void> _connect(int slot) async {
@@ -143,6 +183,13 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
             OutlinedButton.icon(onPressed: _connecting || !active || _available.length < 2 ? null :
                 () => _startCamera(switchLens: true),
                 icon: const Icon(Icons.flip_camera_android, size: 16), label: const Text('FLIP')),
+            FilledButton.tonalIcon(
+              onPressed: active && _ai.ready && !_analysisBusy ? _analyzeSnapshot : null,
+              icon: _analysisBusy
+                  ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.document_scanner_outlined, size: 16),
+              label: Text(_analysisBusy ? 'ANALYZING OFFLINE' : 'ANALYZE SNAPSHOT'),
+            ),
           ]) :
           Column(children: [
             TextField(controller: _urls[index - 1], style: const TextStyle(fontSize: 12),
@@ -193,10 +240,32 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
             const SizedBox(height: 8),
             Text(_ai.message, style: const TextStyle(color: _amber)),
             const SizedBox(height: 8),
-            FilledButton.icon(onPressed: _ai.ready ? () {} : null,
-                icon: const Icon(Icons.play_arrow), label: const Text('START REAL AI')),
+            FilledButton.icon(onPressed: _camera?.value.isInitialized == true && !_analysisBusy
+                ? _analyzeSnapshot : null,
+                icon: const Icon(Icons.play_arrow), label: const Text('ANALYZE LOCAL SNAPSHOT')),
+            if (Platform.isWindows) ...[
+              const SizedBox(height: 6),
+              OutlinedButton.icon(
+                onPressed: _ai.ready && !_analysisBusy ? _analyzeLocalImage : null,
+                icon: const Icon(Icons.image_search_outlined),
+                label: const Text('PICK IMAGE AND ANALYZE OFFLINE'),
+              ),
+            ],
+            if (_detections.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('LOCAL DETECTIONS: ${_detections.length}',
+                  style: const TextStyle(color: _accent, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              for (final detection in _detections.take(12))
+                Text('${detection.label} • ${(detection.confidence * 100).toStringAsFixed(1)}% • ${detection.category.name}',
+                    style: const TextStyle(color: Colors.white70, fontSize: 12)),
+            ] else if (!_analysisBusy && _ai.ready) ...[
+              const SizedBox(height: 5),
+              const Text('No local detections yet. Capture a snapshot to run the offline model.',
+                  style: TextStyle(color: Colors.white70, fontSize: 12)),
+            ],
             const SizedBox(height: 5),
-            const Text('AI inference is disabled until a licensed model and native ONNX runtime are installed. Camera preview does not imply detection.',
+            const Text('The packaged YOLOX-Nano model analyzes phone-camera snapshots locally. It detects COCO-80 classes only; external streams are preview-only.',
                 style: TextStyle(color: Colors.white70, fontSize: 12)),
           ]))),
       ]);

@@ -1,0 +1,4 @@
+/assets/models/yolox_nano.onnx
+__pycache__/
+.dart_tool/
+build/

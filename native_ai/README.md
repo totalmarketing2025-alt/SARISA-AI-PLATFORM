@@ -1,33 +1,34 @@
-# SARISA Offline ONNX Detection — first executable engine
+# SARISA offline ONNX object detection
 
-This directory contains a **real CPU ONNX inference implementation** for a compatible YOLO11/YOLOv8 COCO object-detection model. It processes local JPEG/PNG files without an inference server. It is a Python reference runner, **not yet connected to the Flutter Android/Windows UI**.
+The Android/Windows build packages **YOLOX-Nano trained on COCO-80**, fetched from the official YOLOX release and verified against a pinned SHA-256. The model runs on local images without an inference server or internet access. Its Apache-2.0 license, tensor contract, hash, and provenance are in `assets/models/manifest.json` and `assets/models/LICENSE-YOLOX.txt`. Model weights are downloaded at build/provisioning time rather than stored in Git.
 
-## Provision a model (once, on an authorized development computer)
+The decoder supports the official raw YOLOX output `[1, anchors, 85]`, with grid/stride decoding, confidence filtering, class-aware NMS, and normalized bounding boxes. YOLOv8 COCO output remains supported with `--format yolov8`.
 
-Review the Ultralytics license (AGPL-3.0 or a suitable enterprise license) before using the model. Do not ship weights without license review.
-
-```bash
-python -m pip install ultralytics
-python -c "from ultralytics import YOLO; YOLO('yolo11n.pt').export(format='onnx', imgsz=640, dynamic=False)"
-```
-
-Exported ONNX model must have static NCHW input and standard COCO 80-class output. Verify its checksum, origin and license before packaging. No weights are committed to the repository.
-
-## Execute locally
+## Run locally
 
 ```bash
+python native_ai/fetch_model.py
 python -m pip install -r native_ai/requirements.txt
-python native_ai/offline_detector.py --model yolo11n.onnx --image sample.jpg
+python native_ai/offline_detector.py \
+  --model assets/models/yolox_nano.onnx \
+  --format yolox \
+  --image sample.jpg
 ```
 
-Output is normalized JSON detections for `person`, `vehicle`, and `object`. It does **not** identify people. It does not perform vehicle-image embedding search or plate OCR. The Python runner needs no internet at inference time after dependencies and model weights are installed.
+Each detection includes a broad category (`person`, `vehicle`, `animal`, or `object`), the specific COCO label, class ID, confidence, and normalized box. People are detected as a class only; there is no identity matching or biometric recognition.
 
-## Remaining Android and Windows app integration
+## Scope and limitations
 
-- Package and verify a licensed model and compatible native ONNX Runtime for Android and Windows.
-- Implement native Flutter platform bindings, frame decoding and UI integration.
-- Implement separate vehicle-image embedding and plate detector/OCR inference.
-- Test model tensor shapes, actual inference and memory/FPS on both target platforms.
-- Protect stored imagery, plate text and results with access controls, encryption and retention.
+- COCO-80 includes person, common animals such as dog/cat/bird/cow/horse, trucks and other common vehicles, and everyday objects. It cannot detect arbitrary/untrained classes.
+- This packaged model is a general COCO model, **not trained for aerial/drone imagery**. Small or distant objects in drone frames may be missed. An aerial-specific model trained and evaluated on VisDrone is a separate next stage; VisDrone's released detection classes do not include animals.
+- The app runs explicit Android camera snapshots and selected Windows images through the local engine. This is not continuous live-video inference.
+- Vehicle image similarity search and license-plate OCR are separate models/features and are not included.
 
-The Python runner is not an Android APK feature; do not label Phase 11.9 complete until the device builds pass end-to-end.
+## Tests
+
+```bash
+python -m pip install -r native_ai/requirements-test.txt
+python -m unittest discover -s native_ai -p 'test_*.py' -v
+```
+
+CI fetches and verifies the pinned YOLOX-Nano weights, then executes both a synthetic model for precise decoder edge cases and the real model through ONNX Runtime CPU. The synthetic fixture tests expected boxes/categories; the real-weight smoke test confirms the actual model loads and returns a valid offline result, not detection accuracy. Accuracy/FPS still require device-level validation.

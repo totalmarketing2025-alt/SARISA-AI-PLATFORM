@@ -1,0 +1,29 @@
+{
+  "models": [
+    {
+      "id": "yolox-nano-coco-416",
+      "file": "yolox_nano.onnx",
+      "family": "YOLOX-Nano",
+      "format": "yolox-raw-coco80",
+      "input": {
+        "layout": "NCHW",
+        "shape": [1, 3, 416, 416],
+        "color": "BGR",
+        "range": [0.0, 255.0],
+        "preprocess": "resize-and-pad-114-top-left"
+      },
+      "output": {
+        "shape": [1, 3549, 85],
+        "decode": "yolox-strides-8-16-32",
+        "nms": "class-aware-cpu"
+      },
+      "classes": "COCO-80",
+      "trained_for": "general ground-level object detection; not aerial-domain tuned",
+      "source": "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx",
+      "source_repository": "https://github.com/Megvii-BaseDetection/YOLOX",
+      "license": "Apache-2.0; see LICENSE-YOLOX.txt",
+      "sha256": "c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d",
+      "bytes": 3659407
+    }
+  ]
+}

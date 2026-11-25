@@ -17,6 +17,7 @@ class NativeAiStatus {
 
 class NativeDetection {
   final DetectionCategory category;
+  final String label;
   final double confidence;
   final double x;
   final double y;
@@ -25,6 +26,7 @@ class NativeDetection {
 
   const NativeDetection({
     required this.category,
+    this.label = '',
     required this.confidence,
     required this.x,
     required this.y,

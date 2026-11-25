@@ -24,5 +24,13 @@ class NativeModelArtifact {
       licenseId.trim().isNotEmpty && version.trim().isNotEmpty;
 }
 
-/// Empty until verified model binaries and licenses are selected.
-const approvedNativeModels = <NativeModelArtifact>[];
+/// Only assets with a pinned source, digest and license are listed here.
+const approvedNativeModels = <NativeModelArtifact>[
+  NativeModelArtifact(
+    role: NativeModelRole.objectDetection,
+    filename: 'yolox_nano.onnx',
+    sha256: 'c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d',
+    licenseId: 'Apache-2.0',
+    version: 'YOLOX-Nano COCO-80 0.1.1rc0',
+  ),
+];
