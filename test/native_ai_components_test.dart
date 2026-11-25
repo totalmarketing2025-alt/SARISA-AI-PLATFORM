@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:sarisa/features/ai/services/native_ai_manifest.dart';
@@ -74,4 +76,3 @@ void main() {
     expect(decoded!.confidence, greaterThan(0.99));
   });
 }
-import 'dart:typed_data';
