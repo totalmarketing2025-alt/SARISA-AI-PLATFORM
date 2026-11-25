@@ -74,3 +74,4 @@ void main() {
     expect(decoded!.confidence, greaterThan(0.99));
   });
 }
+import 'dart:typed_data';
