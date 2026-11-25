@@ -1,0 +1,14 @@
+ocr-models
+Copyright (C) 2026 Akoos <https://akoos.eu>
+
+This product includes model files from PaddleOCR
+(https://github.com/PaddlePaddle/PaddleOCR), Copyright (C) PaddlePaddle
+Authors, licensed under the Apache License, Version 2.0:
+
+  - det.onnx                 PP-OCRv5 mobile text-detection network
+  - cls.onnx                 PP-OCRv5 text-line angle classifier
+  - rec_latin.onnx           latin_PP-OCRv5_mobile_rec recognition network
+  - ppocrv5_latin_dict.txt   ppocrv5_latin_dict.txt recognition dictionary
+
+The detection and recognition networks are redistributed in ONNX format.
+This is a format conversion only; the model weights are unchanged.
