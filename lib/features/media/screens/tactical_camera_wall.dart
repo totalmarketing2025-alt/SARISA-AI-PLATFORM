@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -89,7 +88,9 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
   Future<void> _startLiveAi(CameraController camera, {bool modelReady = false}) async {
     final ready = modelReady || await _loadAi();
     if (!mounted || !ready || !identical(camera, _camera) ||
-        !camera.value.isInitialized) return;
+        !camera.value.isInitialized) {
+      return;
+    }
     try {
       await camera.startImageStream((frame) => _onLiveFrame(camera, frame));
       if (mounted && identical(camera, _camera)) {
@@ -107,14 +108,18 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
     final camera = _camera;
     final ready = await _loadAi();
     if (!ready || camera == null || !camera.value.isInitialized ||
-        camera.value.isStreamingImages) return;
+        camera.value.isStreamingImages) {
+      return;
+    }
     await _startLiveAi(camera, modelReady: true);
   }
 
   Future<void> _onLiveFrame(CameraController camera, CameraImage frame) async {
     final now = DateTime.now();
     if (!mounted || !identical(camera, _camera) || _liveFrameBusy ||
-        now.difference(_lastLiveInference) < const Duration(milliseconds: 450)) return;
+        now.difference(_lastLiveInference) < const Duration(milliseconds: 450)) {
+      return;
+    }
     _liveFrameBusy = true;
     _lastLiveInference = now;
     try {
@@ -335,10 +340,12 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
         _ocrReady = true;
       }
       final candidates = await _plateOcr.readVehicleText(bytes, _detections);
-      if (mounted) setState(() {
-        _plateCandidates = candidates;
-        _ocrStatus = candidates.isEmpty ? 'NO PLATE-SHAPED TEXT FOUND' : null;
-      });
+      if (mounted) {
+        setState(() {
+          _plateCandidates = candidates;
+          _ocrStatus = candidates.isEmpty ? 'NO PLATE-SHAPED TEXT FOUND' : null;
+        });
+      }
     } catch (error) {
       if (mounted) setState(() => _ocrStatus = 'LOCAL OCR FAILED: $error');
     } finally {
@@ -627,7 +634,7 @@ class _LiveAiBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => DecoratedBox(
-    decoration: const BoxDecoration(color: Color.fromARGB(199, 0, 0, 0),
+    decoration: BoxDecoration(color: const Color(0xC6000000),
       border: Border.all(color: _accent), borderRadius: BorderRadius.circular(4)),
     child: Padding(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
       child: Text(label, style: const TextStyle(color: _accent,
