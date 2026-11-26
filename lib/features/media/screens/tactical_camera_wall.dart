@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
 import 'package:video_player/video_player.dart';
 import '../../ai/models/ai_finding.dart';
 import '../../ai/services/native_ai_engine.dart';
@@ -12,6 +13,7 @@ import '../../ai/services/vehicle_visual_search.dart';
 import '../../ai/services/plate_ocr_validation.dart';
 import '../../ai/services/anonymous_object_tracker.dart';
 import '../../ai/services/rescue_snapshot_assessment.dart';
+import '../../ai/services/camera_frame_converter.dart';
 
 const _bg = Color(0xFF09120F);
 const _surface = Color(0xFF15251C);
@@ -32,6 +34,11 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
   List<CameraDescription> _available = [];
   int _cameraIndex = 0;
   bool _connecting = false;
+  bool _liveAiActive = false;
+  bool _liveFrameBusy = false;
+  DateTime _lastLiveInference = DateTime.fromMillisecondsSinceEpoch(0);
+  int _liveInferenceCount = 0;
+  Size? _liveImageSize;
   String? _cameraError;
   NativeAiStatus _ai = const NativeAiStatus(false, 'MODEL NOT LOADED');
   final _engine = YoloxOnnxEngine();
@@ -62,11 +69,109 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
     super.initState();
   }
 
-  Future<void> _loadAi() async {
-    if (_ai.ready || _modelLoading) return;
-    setState(() => _modelLoading = true);
+  Future<bool> _loadAi() async {
+    if (_ai.ready) return true;
+    if (_modelLoading) return false;
+    if (mounted) setState(() => _modelLoading = true);
     final status = await _engine.initialize();
     if (mounted) setState(() { _ai = status; _modelLoading = false; });
+    return status.ready;
+  }
+
+  int _deviceRotation(DeviceOrientation orientation) => switch (orientation) {
+    DeviceOrientation.portraitUp => 0,
+    DeviceOrientation.landscapeLeft => 90,
+    DeviceOrientation.portraitDown => 180,
+    DeviceOrientation.landscapeRight => 270,
+  };
+
+  Future<void> _startLiveAi(CameraController camera, {bool modelReady = false}) async {
+    final ready = modelReady || await _loadAi();
+    if (!mounted || !ready || !identical(camera, _camera) ||
+        !camera.value.isInitialized) return;
+    try {
+      await camera.startImageStream((frame) => _onLiveFrame(camera, frame));
+      if (mounted && identical(camera, _camera)) {
+        setState(() { _liveAiActive = true; _cameraError = null; });
+      }
+    } catch (error) {
+      if (mounted) setState(() {
+        _liveAiActive = false;
+        _cameraError = 'Camera preview is live, but live AI stream could not start: $error';
+      });
+    }
+  }
+
+  Future<void> _loadAiAndStartLive() async {
+    final camera = _camera;
+    final ready = await _loadAi();
+    if (!ready || camera == null || !camera.value.isInitialized ||
+        camera.value.isStreamingImages) return;
+    await _startLiveAi(camera, modelReady: true);
+  }
+
+  Future<void> _onLiveFrame(CameraController camera, CameraImage frame) async {
+    final now = DateTime.now();
+    if (!mounted || !identical(camera, _camera) || _liveFrameBusy ||
+        now.difference(_lastLiveInference) < const Duration(milliseconds: 450)) return;
+    _liveFrameBusy = true;
+    _lastLiveInference = now;
+    try {
+      var rgb = await cameraFrameToRgb(frame);
+      final sensor = camera.description.sensorOrientation;
+      final device = _deviceRotation(camera.value.deviceOrientation);
+      final rotation = camera.description.lensDirection == CameraLensDirection.front
+          ? (sensor + device) % 360
+          : (sensor - device + 360) % 360;
+      if (rotation != 0) rgb = img.copyRotate(rgb, angle: rotation);
+      _liveImageSize = Size(rgb.width.toDouble(), rgb.height.toDouble());
+      final detections = await _engine.detectImage(rgb);
+      final tracks = _objectTracker.update(detections);
+      _liveInferenceCount++;
+      Uint8List? frameJpeg;
+      final vehicles = <NativeDetection>[];
+      for (var i = 0; i < detections.length; i++) {
+        if (detections[i].category == DetectionCategory.vehicle) vehicles.add(detections[i]);
+      }
+      // Keep a small, local appearance-search sample without JPEG work on
+      // frames that have no vehicle or on every inference tick.
+      if (vehicles.isNotEmpty) {
+        frameJpeg = Uint8List.fromList(img.encodeJpg(rgb, quality: 72));
+      }
+      final frameId = 'live-${++_frameSequence}';
+      final candidates = <VehicleVisualCandidate>[];
+      if (frameJpeg != null && _liveInferenceCount % 8 == 0) {
+        for (var i = 0; i < detections.length; i++) {
+          final detection = detections[i];
+          if (detection.category != DetectionCategory.vehicle) continue;
+          candidates.add(VehicleVisualCandidate('$frameId-vehicle-$i',
+            VehicleVisualSearch.describeJpeg(frameJpeg,
+              x: detection.x, y: detection.y,
+              width: detection.width, height: detection.height)));
+        }
+      }
+      final assessment = RescueSnapshotAssessment.fromDetections(detections);
+      if (!mounted || !identical(camera, _camera)) return;
+      setState(() {
+        _detections = detections;
+        _trackedDetections = tracks;
+        _rescueAssessment = assessment;
+        _operatorAssessments.clear();
+        _currentImage = vehicles.isEmpty ? null : frameJpeg;
+        _currentFrameId = vehicles.isEmpty ? null : frameId;
+        _vehicleMatches = const [];
+        _vehicleCorpus.addAll(candidates);
+        if (_vehicleCorpus.length > 500) {
+          _vehicleCorpus.removeRange(0, _vehicleCorpus.length - 500);
+        }
+      });
+    } catch (error) {
+      if (mounted && identical(camera, _camera)) {
+        setState(() => _cameraError = 'Offline live inference failed: $error');
+      }
+    } finally {
+      _liveFrameBusy = false;
+    }
   }
 
   Future<void> _startCamera({bool switchLens = false}) async {
@@ -87,10 +192,11 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
       await _camera?.dispose();
       _camera = null;
       final next = CameraController(_available[_cameraIndex], ResolutionPreset.medium,
-          enableAudio: false, imageFormatGroup: ImageFormatGroup.jpeg);
+          enableAudio: false, imageFormatGroup: ImageFormatGroup.yuv420, fps: 15);
       await next.initialize();
       if (!mounted) { await next.dispose(); return; }
       setState(() => _camera = next);
+      await _startLiveAi(next);
     } catch (error) {
       if (mounted) setState(() => _cameraError = 'Camera unavailable or permission denied: $error');
     } finally {
@@ -101,24 +207,17 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
   Future<void> _stopCamera() async {
     final previous = _camera;
     setState(() => _camera = null);
+    _liveAiActive = false;
+    _liveFrameBusy = false;
+    _detections = const [];
+    _currentImage = null;
+    _rescueAssessment = null;
     _objectTracker.reset();
     setState(() => _trackedDetections = const []);
-    await previous?.dispose();
-  }
-
-  Future<void> _analyzeSnapshot() async {
-    final camera = _camera;
-    if (camera == null || !camera.value.isInitialized || !_ai.ready || _analysisBusy) return;
-    setState(() { _analysisBusy = true; _cameraError = null; });
-    try {
-      final photo = await camera.takePicture();
-      final bytes = await photo.readAsBytes();
-      await _analyzeBytes(bytes, trackCameraFrames: true);
-    } catch (error) {
-      if (mounted) setState(() => _cameraError = 'Offline model inference failed: $error');
-    } finally {
-      if (mounted) setState(() => _analysisBusy = false);
+    if (previous?.value.isStreamingImages == true) {
+      try { await previous!.stopImageStream(); } catch (_) {}
     }
+    await previous?.dispose();
   }
 
   Future<void> _analyzeLocalImage() async {
@@ -140,17 +239,13 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
     }
   }
 
-  Future<void> _analyzeBytes(Uint8List bytes, {bool trackCameraFrames = false}) async {
+  Future<void> _analyzeBytes(Uint8List bytes) async {
     setState(() { _analysisBusy = true; _cameraError = null; });
     try {
       final detections = await _engine.detectJpeg(bytes);
       final rescueAssessment = RescueSnapshotAssessment.fromDetections(detections);
-      final tracks = trackCameraFrames
-          ? _objectTracker.update(detections)
-          : <TrackedDetection>[];
-      if (!trackCameraFrames) {
-        _objectTracker.reset();
-      }
+      _objectTracker.reset();
+      final tracks = <TrackedDetection>[];
       final frameId = 'frame-${++_frameSequence}';
       final newCandidates = <VehicleVisualCandidate>[];
       for (var i = 0; i < detections.length; i++) {
@@ -294,7 +389,19 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
         (player?.value.isInitialized ?? false);
     Widget image = const Center(child: Icon(Icons.videocam_off_outlined, color: Color(0xFF5E7966), size: 42));
     if (local && active) {
-      image = CameraPreview(_camera!);
+      image = Stack(fit: StackFit.expand, children: [
+        CameraPreview(_camera!),
+        if (_liveAiActive && _liveImageSize != null)
+          Positioned.fill(child: CustomPaint(painter: _LiveDetectionPainter(
+            detections: _detections,
+            imageSize: _liveImageSize!,
+            mirrored: _camera!.description.lensDirection == CameraLensDirection.front,
+          ))),
+        if (_modelLoading)
+          const Positioned(left: 8, top: 8, child: _LiveAiBadge(label: 'LOADING OFFLINE AI'))
+        else if (_liveAiActive)
+          const Positioned(left: 8, top: 8, child: _LiveAiBadge(label: 'OFFLINE AI • LIVE')),
+      ]);
     } else if (!local && active) {
       image = Center(child: AspectRatio(aspectRatio: player!.value.aspectRatio,
           child: VideoPlayer(player)));
@@ -321,12 +428,11 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
             OutlinedButton.icon(onPressed: _connecting || !active || _available.length < 2 ? null :
                 () => _startCamera(switchLens: true),
                 icon: const Icon(Icons.flip_camera_android, size: 16), label: const Text('FLIP')),
-            FilledButton.tonalIcon(
-              onPressed: active && _ai.ready && !_analysisBusy ? _analyzeSnapshot : null,
-              icon: _analysisBusy
-                  ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.document_scanner_outlined, size: 16),
-              label: Text(_analysisBusy ? 'ANALYZING OFFLINE' : 'ANALYZE SNAPSHOT'),
+            if (active) Chip(
+              avatar: Icon(_liveAiActive ? Icons.radar : Icons.memory,
+                  size: 16, color: _liveAiActive ? _accent : _amber),
+              label: Text(_liveAiActive ? 'AUTO LIVE AI' :
+                  _modelLoading ? 'LOADING AI' : 'AI NOT READY'),
             ),
           ]) :
           Column(children: [
@@ -439,18 +545,20 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
             Text(_ai.message, style: const TextStyle(color: _amber)),
             const SizedBox(height: 8),
             if (!_ai.ready) FilledButton.tonalIcon(
-              onPressed: _modelLoading ? null : _loadAi,
+              onPressed: _modelLoading ? null : _loadAiAndStartLive,
               icon: _modelLoading
                   ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.memory),
               label: Text(_modelLoading ? 'LOADING LOCAL MODEL' : 'LOAD OFFLINE YOLOX MODEL'),
             ),
-            FilledButton.icon(onPressed: _ai.ready && _camera?.value.isInitialized == true && !_analysisBusy
-                ? _analyzeSnapshot : null,
-                icon: const Icon(Icons.play_arrow), label: const Text('ANALYZE LOCAL SNAPSHOT')),
+            Text(_liveAiActive
+                ? 'Live camera frames are analyzed locally; boxes update automatically without taking a snapshot.'
+                : 'Connect the Android camera to load YOLOX and start offline live analysis automatically.',
+                style: const TextStyle(color: Colors.white70, fontSize: 12)),
             const SizedBox(height: 6),
             OutlinedButton.icon(
-              onPressed: _ai.ready && !_analysisBusy ? _analyzeLocalImage : null,
+              onPressed: _ai.ready && !_analysisBusy &&
+                  _camera?.value.isInitialized != true ? _analyzeLocalImage : null,
               icon: const Icon(Icons.image_search_outlined),
               label: const Text('PICK IMAGE AND ANALYZE OFFLINE'),
             ),
@@ -500,14 +608,77 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
               ],
             ] else if (!_analysisBusy && _ai.ready) ...[
               const SizedBox(height: 5),
-              const Text('No local detections yet. Capture a snapshot to run the offline model.',
+              const Text('Waiting for live camera detections. Connect the Android camera to begin.',
                   style: TextStyle(color: Colors.white70, fontSize: 12)),
             ],
             const SizedBox(height: 5),
-            const Text('The packaged YOLOX-Nano model analyzes phone-camera snapshots locally. It detects COCO-80 classes only; external streams are preview-only.',
+            const Text('The packaged YOLOX-Nano model analyzes Android phone-camera frames locally and detects COCO-80 classes. External streams are preview-only.',
                 style: TextStyle(color: Colors.white70, fontSize: 12)),
           ]))),
       ]);
     },
   ));
+}
+
+class _LiveAiBadge extends StatelessWidget {
+  final String label;
+  const _LiveAiBadge({required this.label});
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(color: Colors.black.withOpacity(0.78),
+      border: Border.all(color: _accent), borderRadius: BorderRadius.circular(4)),
+    child: Padding(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      child: Text(label, style: const TextStyle(color: _accent,
+        fontWeight: FontWeight.bold, fontSize: 9))),
+  );
+}
+
+class _LiveDetectionPainter extends CustomPainter {
+  final List<NativeDetection> detections;
+  final Size imageSize;
+  final bool mirrored;
+
+  _LiveDetectionPainter({required this.detections, required this.imageSize,
+    required this.mirrored});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty || imageSize.isEmpty) return;
+    final fitted = applyBoxFit(BoxFit.cover, imageSize, size);
+    final destination = Alignment.center.inscribe(fitted.destination, Offset.zero & size);
+    final source = Alignment.center.inscribe(fitted.source, Offset.zero & imageSize);
+    final stroke = Paint()..style = PaintingStyle.stroke..strokeWidth = 2;
+    for (final detection in detections) {
+      if (!detection.valid) continue;
+      stroke.color = detection.category == DetectionCategory.person
+          ? const Color(0xFF9FE870)
+          : detection.category == DetectionCategory.vehicle
+              ? const Color(0xFFFFC857)
+              : Colors.cyanAccent;
+      final normalizedX = mirrored ? 1 - detection.x - detection.width : detection.x;
+      final left = (normalizedX * imageSize.width - source.left) / source.width;
+      final top = (detection.y * imageSize.height - source.top) / source.height;
+      final width = detection.width * imageSize.width / source.width;
+      final height = detection.height * imageSize.height / source.height;
+      final rect = Rect.fromLTWH(destination.left + left * destination.width,
+        destination.top + top * destination.height,
+        width * destination.width, height * destination.height);
+      if (!rect.overlaps(destination)) continue;
+      canvas.drawRect(rect, stroke);
+      final label = '${detection.label.toUpperCase()} ${(detection.confidence * 100).round()}%';
+      final text = TextPainter(text: TextSpan(text: label, style: const TextStyle(
+        color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold,
+        backgroundColor: Colors.black87)), textDirection: TextDirection.ltr)
+        ..layout(maxWidth: size.width);
+      final labelY = rect.top - text.height < destination.top
+          ? rect.top : rect.top - text.height;
+      text.paint(canvas, Offset(rect.left, labelY));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _LiveDetectionPainter oldDelegate) =>
+      oldDelegate.detections != detections || oldDelegate.imageSize != imageSize ||
+      oldDelegate.mirrored != mirrored;
 }

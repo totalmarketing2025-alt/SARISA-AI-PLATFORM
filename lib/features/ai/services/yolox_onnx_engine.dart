@@ -55,10 +55,16 @@ class YoloxOnnxEngine implements NativeAiEngine {
 
   @override
   Future<List<NativeDetection>> detectJpeg(Uint8List jpeg) async {
-    final session = _session;
-    if (session == null) throw StateError('Initialize the local ONNX model first.');
     final decoded = img.decodeImage(jpeg);
     if (decoded == null) throw const FormatException('Image is not a supported JPEG.');
+    return detectImage(decoded);
+  }
+
+  /// Runs inference directly on a decoded camera frame, avoiding a JPEG
+  /// encode/decode round-trip on every live frame.
+  Future<List<NativeDetection>> detectImage(img.Image decoded) async {
+    final session = _session;
+    if (session == null) throw StateError('Initialize the local ONNX model first.');
     if (decoded.width * decoded.height > 16000000) {
       throw const FormatException('Image exceeds the 16 megapixel safety limit.');
     }
