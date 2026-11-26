@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:video_player/video_player.dart';
 import '../../ai/models/ai_finding.dart';
@@ -626,7 +627,7 @@ class _LiveAiBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => DecoratedBox(
-    decoration: BoxDecoration(color: Colors.black.withOpacity(0.78),
+    decoration: const BoxDecoration(color: Color.fromARGB(199, 0, 0, 0),
       border: Border.all(color: _accent), borderRadius: BorderRadius.circular(4)),
     child: Padding(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
       child: Text(label, style: const TextStyle(color: _accent,
