@@ -40,7 +40,8 @@ Map<String, Object> convertYuv420Planes(Map<String, Object> input) {
   if (width <= 0 || height <= 0 || limit <= 0) {
     throw const FormatException('Invalid live camera frame dimensions.');
   }
-  final scale = (width > height ? width : height) / limit;
+  final longestSide = width > height ? width : height;
+  final scale = longestSide > limit ? longestSide / limit : 1.0;
   final outWidth = (width / scale).round().clamp(1, limit).toInt();
   final outHeight = (height / scale).round().clamp(1, limit).toInt();
   final y = input['y']! as Uint8List;
