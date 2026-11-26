@@ -9,16 +9,22 @@ class MissionPlan {
   final String createdAt;
   final List<LatLng> waypoints;
   final List<LatLng> searchArea;
+  final List<List<LatLng>> searchTracks;
+  final double laneSpacingMeters;
   final List<String> history;
 
   const MissionPlan({required this.id, required this.name, required this.notes,
     required this.status, required this.createdAt, required this.waypoints,
-    required this.searchArea, required this.history});
+    required this.searchArea, this.searchTracks = const [],
+    this.laneSpacingMeters = 50, required this.history});
 
   MissionPlan copyWith({String? status, List<LatLng>? waypoints, List<LatLng>? searchArea,
+    List<List<LatLng>>? searchTracks, double? laneSpacingMeters,
     List<String>? history}) => MissionPlan(id: id, name: name, notes: notes,
     status: status ?? this.status, createdAt: createdAt,
     waypoints: waypoints ?? this.waypoints, searchArea: searchArea ?? this.searchArea,
+    searchTracks: searchTracks ?? this.searchTracks,
+    laneSpacingMeters: laneSpacingMeters ?? this.laneSpacingMeters,
     history: history ?? this.history);
 
   static List<LatLng> _points(dynamic raw) => (raw as List<dynamic>).map((p) {
@@ -37,7 +43,9 @@ class MissionPlan {
   Map<String, dynamic> toJson() => {
     'id': id, 'name': name, 'notes': notes, 'status': status,
     'createdAt': createdAt, 'waypoints': _encodePoints(waypoints),
-    'searchArea': _encodePoints(searchArea), 'history': history,
+    'searchArea': _encodePoints(searchArea),
+    'searchTracks': searchTracks.map(_encodePoints).toList(),
+    'laneSpacingMeters': laneSpacingMeters, 'history': history,
   };
 
   factory MissionPlan.fromJson(Map<String, dynamic> json) => MissionPlan(
@@ -47,6 +55,9 @@ class MissionPlan {
     createdAt: json['createdAt'] as String,
     waypoints: _points(json['waypoints'] ?? []),
     searchArea: _points(json['searchArea'] ?? []),
+    searchTracks: (json['searchTracks'] as List<dynamic>? ?? [])
+        .map(_points).toList(),
+    laneSpacingMeters: (json['laneSpacingMeters'] as num? ?? 50).toDouble(),
     history: (json['history'] as List<dynamic>? ?? []).cast<String>(),
   );
 

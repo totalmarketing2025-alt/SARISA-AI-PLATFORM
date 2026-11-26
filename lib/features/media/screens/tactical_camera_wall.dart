@@ -14,6 +14,7 @@ import '../../ai/services/plate_ocr_validation.dart';
 import '../../ai/services/anonymous_object_tracker.dart';
 import '../../ai/services/rescue_snapshot_assessment.dart';
 import '../../ai/services/camera_frame_converter.dart';
+import '../../ai/services/person_appearance_matcher.dart';
 
 const _bg = Color(0xFF09120F);
 const _surface = Color(0xFF15251C);
@@ -50,6 +51,13 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
   String? _ocrStatus;
   List<PlateOcrCandidate> _plateCandidates = const [];
   List<NativeDetection> _detections = const [];
+  Uint8List? _targetPersonPhoto;
+  String? _targetPersonFileName;
+  List<double>? _targetPersonAppearance;
+  String? _targetPersonStatus;
+  bool _targetPersonLoading = false;
+  double _targetMatchThreshold = 0.82;
+  Map<int, double> _targetFrameMatches = const {};
   RescueSnapshotAssessment? _rescueAssessment;
   final Map<int, RescueOperatorAssessment> _operatorAssessments = {};
   Uint8List? _currentImage;
@@ -114,9 +122,66 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
     await _startLiveAi(camera, modelReady: true);
   }
 
+  Future<void> _selectSearchTarget() async {
+    if (_targetPersonLoading) return;
+    setState(() {
+      _targetPersonLoading = true;
+      _targetPersonStatus = null;
+    });
+    try {
+      if (!await _loadAi()) throw StateError(_ai.message);
+      final selection = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        withData: true,
+      );
+      if (selection == null || selection.files.isEmpty) return;
+      final file = selection.files.single;
+      final bytes = file.bytes ??
+          (file.path == null ? null : await File(file.path!).readAsBytes());
+      if (bytes == null) throw StateError('Could not read the selected image.');
+      final image = img.decodeImage(bytes);
+      if (image == null || image.width * image.height > 16000000) {
+        throw const FormatException('Choose a readable image smaller than 16 MP.');
+      }
+      final persons = (await _engine.detectImage(image)).where((detection) =>
+          detection.category == DetectionCategory.person && detection.valid &&
+          detection.confidence >= 0.25).toList();
+      if (persons.isEmpty) {
+        throw StateError('No person found in that reference image. Choose a clear photo with one visible person.');
+      }
+      persons.sort((a, b) =>
+          (b.confidence * b.width * b.height).compareTo(
+              a.confidence * a.width * a.height));
+      final appearance = PersonAppearanceMatcher.describe(image, persons.first);
+      if (!mounted) return;
+      setState(() {
+        _targetPersonPhoto = bytes;
+        _targetPersonFileName = file.name;
+        _targetPersonAppearance = appearance;
+        _targetFrameMatches = const {};
+        _targetPersonStatus = 'Reference ready • appearance match only';
+      });
+    } catch (error) {
+      if (mounted) setState(() => _targetPersonStatus = 'Could not set SAR target: $error');
+    } finally {
+      if (mounted) setState(() => _targetPersonLoading = false);
+    }
+  }
+
+  void _clearSearchTarget() {
+    setState(() {
+      _targetPersonPhoto = null;
+      _targetPersonFileName = null;
+      _targetPersonAppearance = null;
+      _targetPersonStatus = null;
+      _targetFrameMatches = const {};
+    });
+  }
+
   Future<void> _onLiveFrame(CameraController camera, CameraImage frame) async {
     final now = DateTime.now();
     if (!mounted || !identical(camera, _camera) || _liveFrameBusy ||
+        _targetPersonLoading ||
         now.difference(_lastLiveInference) < const Duration(milliseconds: 450)) {
       return;
     }
@@ -133,6 +198,31 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
       _liveImageSize = Size(rgb.width.toDouble(), rgb.height.toDouble());
       final detections = await _engine.detectImage(rgb);
       final tracks = _objectTracker.update(detections);
+      var nextTargetMatches = const <int, double>{};
+      final targetAppearance = _targetPersonAppearance;
+      if (targetAppearance != null) {
+        var bestIndex = -1;
+        var bestScore = 0.0;
+        final personIndexes = [
+          for (var index = 0; index < detections.length; index++)
+            if (detections[index].category == DetectionCategory.person &&
+                detections[index].valid) index,
+        ]..sort((a, b) =>
+            (detections[b].confidence * detections[b].width * detections[b].height)
+                .compareTo(detections[a].confidence * detections[a].width * detections[a].height));
+        for (final index in personIndexes.take(20)) {
+          final detection = detections[index];
+          final score = PersonAppearanceMatcher.similarity(targetAppearance,
+              PersonAppearanceMatcher.describe(rgb, detection));
+          if (score > bestScore) {
+            bestIndex = index;
+            bestScore = score;
+          }
+        }
+        if (bestIndex >= 0 && bestScore >= _targetMatchThreshold) {
+          nextTargetMatches = {bestIndex: bestScore};
+        }
+      }
       _liveInferenceCount++;
       Uint8List? frameJpeg;
       final vehicles = <NativeDetection>[];
@@ -160,6 +250,7 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
       if (!mounted || !identical(camera, _camera)) return;
       setState(() {
         _detections = detections;
+        _targetFrameMatches = nextTargetMatches;
         _trackedDetections = tracks;
         _rescueAssessment = assessment;
         _operatorAssessments.clear();
@@ -216,6 +307,7 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
     _liveAiActive = false;
     _liveFrameBusy = false;
     _detections = const [];
+    _targetFrameMatches = const {};
     _currentImage = null;
     _rescueAssessment = null;
     _objectTracker.reset();
@@ -404,6 +496,7 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
             detections: _detections,
             imageSize: _liveImageSize!,
             mirrored: _camera!.description.lensDirection == CameraLensDirection.front,
+            targetMatches: _targetFrameMatches,
           ))),
         if (_modelLoading)
           const Positioned(left: 8, top: 8, child: _LiveAiBadge(label: 'LOADING OFFLINE AI'))
@@ -559,10 +652,54 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
                   : const Icon(Icons.memory),
               label: Text(_modelLoading ? 'LOADING LOCAL MODEL' : 'LOAD OFFLINE YOLOX MODEL'),
             ),
+            OutlinedButton.icon(
+              onPressed: _targetPersonLoading ? null : _selectSearchTarget,
+              icon: _targetPersonLoading
+                  ? const SizedBox(width: 15, height: 15,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.person_search),
+              label: Text(_targetPersonLoading
+                  ? 'ANALYZING REFERENCE LOCALLY'
+                  : _targetPersonAppearance == null
+                      ? 'UPLOAD SAR TARGET PHOTO'
+                      : 'CHANGE SAR TARGET PHOTO'),
+            ),
+            if (_targetPersonPhoto != null) ...[
+              Row(children: [
+                ClipRRect(borderRadius: BorderRadius.circular(4),
+                  child: Image.memory(_targetPersonPhoto!, width: 42, height: 54,
+                    fit: BoxFit.cover)),
+                const SizedBox(width: 8),
+                Expanded(child: Text(_targetPersonFileName ?? 'SAR target reference',
+                  maxLines: 2, overflow: TextOverflow.ellipsis)),
+                IconButton(tooltip: 'Clear SAR target photo',
+                  onPressed: _clearSearchTarget,
+                  icon: const Icon(Icons.close)),
+              ]),
+              Row(children: [
+                Expanded(child: Text('Candidate mark threshold: ${(_targetMatchThreshold * 100).round()}%')),
+                SizedBox(width: 150, child: Slider(value: _targetMatchThreshold,
+                  min: 0.70, max: 0.95, divisions: 10,
+                  onChanged: (value) => setState(() {
+                    _targetMatchThreshold = value;
+                    _targetFrameMatches = const {};
+                  }))),
+              ]),
+            ],
+            if (_targetPersonStatus != null)
+              Text(_targetPersonStatus!, style: const TextStyle(color: _amber, fontSize: 11)),
             Text(_liveAiActive
-                ? 'Live camera frames are analyzed locally; boxes update automatically without taking a snapshot.'
+                ? 'Live camera frames are analyzed locally; person and vehicle boxes update without a snapshot.'
                 : 'Connect the Android camera to load YOLOX and start offline live analysis automatically.',
                 style: const TextStyle(color: Colors.white70, fontSize: 12)),
+            if (_targetPersonAppearance != null)
+              const Text('SAR TARGET CANDIDATE uses clothing/color similarity only. It is not face recognition or identity confirmation; verify every marked result visually.',
+                style: TextStyle(color: Colors.amberAccent, fontSize: 11)),
+            if (_targetPersonAppearance != null && _liveAiActive)
+              Text(_targetFrameMatches.isEmpty
+                  ? 'No person appearance candidate is above the selected threshold in the latest frame.'
+                  : 'A possible visual candidate is marked on the live view. Operator verification is required.',
+                style: const TextStyle(color: Colors.white70, fontSize: 11)),
             const SizedBox(height: 6),
             OutlinedButton.icon(
               onPressed: _ai.ready && !_analysisBusy &&
@@ -646,9 +783,10 @@ class _LiveDetectionPainter extends CustomPainter {
   final List<NativeDetection> detections;
   final Size imageSize;
   final bool mirrored;
+  final Map<int, double> targetMatches;
 
   _LiveDetectionPainter({required this.detections, required this.imageSize,
-    required this.mirrored});
+    required this.mirrored, required this.targetMatches});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -657,9 +795,13 @@ class _LiveDetectionPainter extends CustomPainter {
     final destination = Alignment.center.inscribe(fitted.destination, Offset.zero & size);
     final source = Alignment.center.inscribe(fitted.source, Offset.zero & imageSize);
     final stroke = Paint()..style = PaintingStyle.stroke..strokeWidth = 2;
-    for (final detection in detections) {
+    for (var index = 0; index < detections.length; index++) {
+      final detection = detections[index];
       if (!detection.valid) continue;
-      stroke.color = detection.category == DetectionCategory.person
+      final targetScore = targetMatches[index];
+      stroke.color = targetScore != null
+          ? const Color(0xFFFF4FD8)
+          : detection.category == DetectionCategory.person
           ? const Color(0xFF9FE870)
           : detection.category == DetectionCategory.vehicle
               ? const Color(0xFFFFC857)
@@ -674,7 +816,9 @@ class _LiveDetectionPainter extends CustomPainter {
         width * destination.width, height * destination.height);
       if (!rect.overlaps(destination)) continue;
       canvas.drawRect(rect, stroke);
-      final label = '${detection.label.toUpperCase()} ${(detection.confidence * 100).round()}%';
+      final label = targetScore == null
+          ? '${detection.label.toUpperCase()} ${(detection.confidence * 100).round()}%'
+          : 'SAR TARGET CANDIDATE ${(targetScore * 100).round()}%';
       final text = TextPainter(text: TextSpan(text: label, style: const TextStyle(
         color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold,
         backgroundColor: Colors.black87)), textDirection: TextDirection.ltr)
@@ -688,5 +832,5 @@ class _LiveDetectionPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _LiveDetectionPainter oldDelegate) =>
       oldDelegate.detections != detections || oldDelegate.imageSize != imageSize ||
-      oldDelegate.mirrored != mirrored;
+      oldDelegate.mirrored != mirrored || oldDelegate.targetMatches != targetMatches;
 }
