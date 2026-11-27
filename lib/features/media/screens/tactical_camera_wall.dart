@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -53,7 +54,8 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
   List<NativeDetection> _detections = const [];
   Uint8List? _targetPersonPhoto;
   String? _targetPersonFileName;
-  List<double>? _targetPersonAppearance;
+  final _targetAppearanceProfile = PersonAppearanceProfile();
+  List<double>? _pendingTargetAppearance;
   String? _targetPersonStatus;
   bool _targetPersonLoading = false;
   double _targetMatchThreshold = 0.82;
@@ -132,34 +134,56 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
       if (!await _loadAi()) throw StateError(_ai.message);
       final selection = await FilePicker.platform.pickFiles(
         type: FileType.image,
+        allowMultiple: true,
         withData: true,
       );
       if (selection == null || selection.files.isEmpty) return;
-      final file = selection.files.single;
-      final bytes = file.bytes ??
-          (file.path == null ? null : await File(file.path!).readAsBytes());
-      if (bytes == null) throw StateError('Could not read the selected image.');
-      final image = img.decodeImage(bytes);
-      if (image == null || image.width * image.height > 16000000) {
-        throw const FormatException('Choose a readable image smaller than 16 MP.');
+      if (selection.files.length > PersonAppearanceProfile.maxSamples) {
+        throw StateError('Choose up to ${PersonAppearanceProfile.maxSamples} reference photos per session.');
       }
-      final persons = (await _engine.detectImage(image)).where((detection) =>
-          detection.category == DetectionCategory.person && detection.valid &&
-          detection.confidence >= 0.25).toList();
-      if (persons.isEmpty) {
-        throw StateError('No person found in that reference image. Choose a clear photo with one visible person.');
+      final samples = <List<double>>[];
+      final acceptedNames = <String>[];
+      Uint8List? thumbnail;
+      var skipped = 0;
+      for (final file in selection.files) {
+        final bytes = file.bytes ??
+            (file.path == null ? null : await File(file.path!).readAsBytes());
+        if (bytes == null) {
+          skipped++;
+          continue;
+        }
+        final image = img.decodeImage(bytes);
+        if (image == null || image.width * image.height > 16000000) {
+          skipped++;
+          continue;
+        }
+        final persons = (await _engine.detectImage(image)).where((detection) =>
+            detection.category == DetectionCategory.person && detection.valid &&
+            detection.confidence >= 0.25).toList();
+        if (persons.isEmpty) {
+          skipped++;
+          continue;
+        }
+        persons.sort((a, b) =>
+            (b.confidence * b.width * b.height).compareTo(
+                a.confidence * a.width * a.height));
+        samples.add(PersonAppearanceMatcher.describe(image, persons.first));
+        acceptedNames.add(file.name);
+        thumbnail ??= Uint8List.fromList(img.encodeJpg(img.copyResize(image,
+          width: image.width > 320 ? 320 : image.width)));
       }
-      persons.sort((a, b) =>
-          (b.confidence * b.width * b.height).compareTo(
-              a.confidence * a.width * a.height));
-      final appearance = PersonAppearanceMatcher.describe(image, persons.first);
+      if (samples.isEmpty) {
+        throw StateError('No clear person was found in the selected photos. Choose up to eight readable photos with the person visible.');
+      }
       if (!mounted) return;
       setState(() {
-        _targetPersonPhoto = bytes;
-        _targetPersonFileName = file.name;
-        _targetPersonAppearance = appearance;
+        _targetAppearanceProfile.replace(samples);
+        _targetPersonPhoto = thumbnail;
+        _targetPersonFileName = acceptedNames.join(', ');
         _targetFrameMatches = const {};
-        _targetPersonStatus = 'Reference ready • appearance match only';
+        _pendingTargetAppearance = null;
+        _targetPersonStatus = '${samples.length} reference view(s) loaded locally'
+            '${skipped == 0 ? '' : ' • $skipped skipped'} • appearance match only';
       });
     } catch (error) {
       if (mounted) setState(() => _targetPersonStatus = 'Could not set SAR target: $error');
@@ -172,9 +196,28 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
     setState(() {
       _targetPersonPhoto = null;
       _targetPersonFileName = null;
-      _targetPersonAppearance = null;
+      _targetAppearanceProfile.clear();
+      _pendingTargetAppearance = null;
       _targetPersonStatus = null;
       _targetFrameMatches = const {};
+    });
+  }
+
+  void _learnConfirmedTargetAppearance() {
+    final sample = _pendingTargetAppearance;
+    if (sample == null || _targetFrameMatches.isEmpty) return;
+    final result = _targetAppearanceProfile.addConfirmed(sample);
+    if (result != AppearanceSampleAddResult.added) {
+      setState(() => _targetPersonStatus = result == AppearanceSampleAddResult.full
+          ? 'Profile already has ${PersonAppearanceProfile.maxSamples} samples. Load new reference photos to replace it.'
+          : 'This appearance is already represented in the local profile.');
+      return;
+    }
+    setState(() {
+      _pendingTargetAppearance = null;
+      _targetFrameMatches = const {};
+      _targetPersonStatus = 'Operator-confirmed sample learned in this session '
+          '(${_targetAppearanceProfile.sampleCount}/${PersonAppearanceProfile.maxSamples}).';
     });
   }
 
@@ -199,8 +242,8 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
       final detections = await _engine.detectImage(rgb);
       final tracks = _objectTracker.update(detections);
       var nextTargetMatches = const <int, double>{};
-      final targetAppearance = _targetPersonAppearance;
-      if (targetAppearance != null) {
+      List<double>? pendingTargetAppearance;
+      if (!_targetAppearanceProfile.isEmpty) {
         var bestIndex = -1;
         var bestScore = 0.0;
         final personIndexes = [
@@ -212,15 +255,18 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
                 .compareTo(detections[a].confidence * detections[a].width * detections[a].height));
         for (final index in personIndexes.take(20)) {
           final detection = detections[index];
-          final score = PersonAppearanceMatcher.similarity(targetAppearance,
-              PersonAppearanceMatcher.describe(rgb, detection));
+          final appearance = PersonAppearanceMatcher.describe(rgb, detection);
+          final score = _targetAppearanceProfile.similarityTo(appearance) ?? 0;
           if (score > bestScore) {
             bestIndex = index;
             bestScore = score;
+            pendingTargetAppearance = appearance;
           }
         }
         if (bestIndex >= 0 && bestScore >= _targetMatchThreshold) {
           nextTargetMatches = {bestIndex: bestScore};
+        } else {
+          pendingTargetAppearance = null;
         }
       }
       _liveInferenceCount++;
@@ -251,6 +297,7 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
       setState(() {
         _detections = detections;
         _targetFrameMatches = nextTargetMatches;
+        _pendingTargetAppearance = pendingTargetAppearance;
         _trackedDetections = tracks;
         _rescueAssessment = assessment;
         _operatorAssessments.clear();
@@ -308,6 +355,7 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
     _liveFrameBusy = false;
     _detections = const [];
     _targetFrameMatches = const {};
+    _pendingTargetAppearance = null;
     _currentImage = null;
     _rescueAssessment = null;
     _objectTracker.reset();
@@ -474,6 +522,8 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
 
   @override
   void dispose() {
+    _targetAppearanceProfile.clear();
+    _pendingTargetAppearance = null;
     _camera?.dispose();
     for (final p in _players.values) { p.dispose(); }
     for (final c in _urls) { c.dispose(); }
@@ -659,10 +709,10 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
                       child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.person_search),
               label: Text(_targetPersonLoading
-                  ? 'ANALYZING REFERENCE LOCALLY'
-                  : _targetPersonAppearance == null
-                      ? 'UPLOAD SAR TARGET PHOTO'
-                      : 'CHANGE SAR TARGET PHOTO'),
+                  ? 'ANALYZING REFERENCE PHOTOS LOCALLY'
+                  : _targetAppearanceProfile.isEmpty
+                      ? 'LOAD SAR REFERENCE PHOTOS'
+                      : 'REPLACE SAR REFERENCE PHOTOS'),
             ),
             if (_targetPersonPhoto != null) ...[
               Row(children: [
@@ -677,7 +727,7 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
                   icon: const Icon(Icons.close)),
               ]),
               Row(children: [
-                Expanded(child: Text('Candidate mark threshold: ${(_targetMatchThreshold * 100).round()}%')),
+                Expanded(child: Text('Reference samples: ${_targetAppearanceProfile.sampleCount}/${PersonAppearanceProfile.maxSamples} • candidate threshold: ${(_targetMatchThreshold * 100).round()}%')),
                 SizedBox(width: 150, child: Slider(value: _targetMatchThreshold,
                   min: 0.70, max: 0.95, divisions: 10,
                   onChanged: (value) => setState(() {
@@ -688,14 +738,21 @@ class _TacticalCameraWallState extends State<TacticalCameraWall> {
             ],
             if (_targetPersonStatus != null)
               Text(_targetPersonStatus!, style: const TextStyle(color: _amber, fontSize: 11)),
+            if (_targetAppearanceProfile.sampleCount < PersonAppearanceProfile.maxSamples &&
+                _pendingTargetAppearance != null)
+              OutlinedButton.icon(
+                onPressed: _learnConfirmedTargetAppearance,
+                icon: const Icon(Icons.model_training),
+                label: const Text('CONFIRM CANDIDATE & LEARN APPEARANCE'),
+              ),
             Text(_liveAiActive
                 ? 'Live camera frames are analyzed locally; person and vehicle boxes update without a snapshot.'
                 : 'Connect the Android camera to load YOLOX and start offline live analysis automatically.',
                 style: const TextStyle(color: Colors.white70, fontSize: 12)),
-            if (_targetPersonAppearance != null)
-              const Text('SAR TARGET CANDIDATE uses clothing/color similarity only. It is not face recognition or identity confirmation; verify every marked result visually.',
+            if (!_targetAppearanceProfile.isEmpty)
+              const Text('SAR TARGET CANDIDATE uses clothing/color similarity only. It is not face recognition or identity confirmation. Confirm a visible candidate before adding a session-only appearance sample.',
                 style: TextStyle(color: Colors.amberAccent, fontSize: 11)),
-            if (_targetPersonAppearance != null && _liveAiActive)
+            if (!_targetAppearanceProfile.isEmpty && _liveAiActive)
               Text(_targetFrameMatches.isEmpty
                   ? 'No person appearance candidate is above the selected threshold in the latest frame.'
                   : 'A possible visual candidate is marked on the live view. Operator verification is required.',

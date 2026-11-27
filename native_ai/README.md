@@ -38,6 +38,8 @@ Track identifiers reset for each clip and are not persisted.
 
 Each detection includes a broad category (`person`, `vehicle`, `animal`, or `object`), the specific COCO label, class ID, confidence, and normalized box. People are detected as a class only; there is no identity matching or biometric recognition.
 
+In the live camera, an operator may load up to eight reference photos for a SAR target. The local appearance profile compares clothing/color patterns against detected person crops. An operator can explicitly confirm a marked candidate to add one temporary appearance sample, up to eight samples total. Reference profiles and learned samples stay in memory for the current app session and are cleared when the target is cleared or the screen is closed. This adapts the appearance search profile only; it does not train or change YOLOX weights, establish identity, or guarantee a match.
+
 ## SAR scope and limitations
 
 - COCO-80 includes person, common animals such as dog/cat/bird/cow/horse, trucks and other common vehicles, and everyday objects. It cannot detect arbitrary/untrained classes.

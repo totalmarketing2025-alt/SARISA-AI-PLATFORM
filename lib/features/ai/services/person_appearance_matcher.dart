@@ -78,3 +78,51 @@ class PersonAppearanceMatcher {
         .clamp(0.0, 1.0).toDouble();
   }
 }
+
+/// Session-only few-shot profile for operator-provided SAR appearance samples.
+/// It does not fine-tune or modify the YOLO model weights.
+enum AppearanceSampleAddResult { added, duplicate, full }
+
+class PersonAppearanceProfile {
+  static const maxSamples = 8;
+  final List<List<double>> _samples = [];
+
+  int get sampleCount => _samples.length;
+  bool get isEmpty => _samples.isEmpty;
+
+  void replace(Iterable<List<double>> samples) {
+    _samples.clear();
+    for (final sample in samples.take(maxSamples)) {
+      _addValidated(sample);
+    }
+  }
+
+  AppearanceSampleAddResult addConfirmed(List<double> sample) {
+    for (final existing in _samples) {
+      if (PersonAppearanceMatcher.similarity(existing, sample) >= 0.995) {
+        return AppearanceSampleAddResult.duplicate;
+      }
+    }
+    if (_samples.length >= maxSamples) return AppearanceSampleAddResult.full;
+    _addValidated(sample);
+    return AppearanceSampleAddResult.added;
+  }
+
+  double? similarityTo(List<double> candidate) {
+    if (_samples.isEmpty) return null;
+    var best = 0.0;
+    for (final sample in _samples) {
+      final score = PersonAppearanceMatcher.similarity(sample, candidate);
+      if (score > best) best = score;
+    }
+    return best;
+  }
+
+  void clear() => _samples.clear();
+
+  void _addValidated(List<double> sample) {
+    // Self-similarity validates length, finite values and nonzero magnitude.
+    PersonAppearanceMatcher.similarity(sample, sample);
+    _samples.add(List<double>.unmodifiable(sample));
+  }
+}
