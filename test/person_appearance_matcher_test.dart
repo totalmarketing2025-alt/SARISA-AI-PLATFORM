@@ -7,7 +7,7 @@ import 'package:sarisa/features/ai/services/person_appearance_matcher.dart';
 void main() {
   test('same person crop receives full clothing-color similarity', () {
     final image = img.Image(width: 32, height: 64);
-    img.fill(image, color: const img.ColorRgb8(30, 80, 180));
+    img.fill(image, color: img.ColorRgb8(30, 80, 180));
     final person = const NativeDetection(category: DetectionCategory.person,
       confidence: 0.95, x: 0, y: 0, width: 1, height: 1);
     final descriptor = PersonAppearanceMatcher.describe(image, person);
@@ -18,8 +18,8 @@ void main() {
   test('separate color patterns are ranked below matching appearance', () {
     final blue = img.Image(width: 32, height: 64);
     final red = img.Image(width: 32, height: 64);
-    img.fill(blue, color: const img.ColorRgb8(20, 40, 220));
-    img.fill(red, color: const img.ColorRgb8(220, 30, 20));
+    img.fill(blue, color: img.ColorRgb8(20, 40, 220));
+    img.fill(red, color: img.ColorRgb8(220, 30, 20));
     const box = NativeDetection(category: DetectionCategory.person,
       confidence: 0.9, x: 0, y: 0, width: 1, height: 1);
     final first = PersonAppearanceMatcher.describe(blue, box);

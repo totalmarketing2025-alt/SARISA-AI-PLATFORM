@@ -244,7 +244,7 @@ class _MissionPlanningPageState extends State<MissionPlanningPage> {
             onPointerDown: (_, point) => _beginAreaStroke(point),
             onPointerMove: (_, point) => _extendAreaStroke(point),
             onPointerUp: (_, point) => _finishAreaStroke(point),
-            onPointerCancel: (_) {
+            onPointerCancel: (_, point) {
               if (_drawingArea) setState(() { _drawingArea = false; _areaDraft = []; });
             }),
           children: [
